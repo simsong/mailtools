@@ -2,4 +2,4 @@
 Mail Statistics
 
 
-# See also https://github.com/mihaip/mail-trends.git
+* See also https://github.com/mihaip/mail-trends.git
