@@ -13,7 +13,12 @@ import datetime
 schema = \
 """
 PRAGMA cache_size = 200000;
-CREATE TABLE IF NOT EXISTS files (fileid INTEGER PRIMARY KEY, pathid INTEGER NOT NULL, mtime TIMET NOT NULL, size INTEGER NOT NULL, hashid INTEGER NOT NULL, scanid INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS files (fileid INTEGER PRIMARY KEY,
+                                  pathid INTEGER NOT NULL,
+                                  mtime TIMET NOT NULL, 
+                                  size INTEGER NOT NULL, 
+                                  hashid INTEGER NOT NULL, 
+                                  scanid INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS files_idx0 ON files(fileid);
 CREATE INDEX IF NOT EXISTS files_idx1 ON files(pathid);
 CREATE INDEX IF NOT EXISTS files_idx2 ON files(mtime);
@@ -86,23 +91,28 @@ class Scanner(object):
     def process_path(self,scanid,path):
         """ Add the file to the database database. If it is there and the mtime hasn't been changed, don't re-hash."""
 
-        st = os.stat(path)
+        try:
+            st = os.stat(path)
+        except FileNotFoundError as e:
+            return 
         pathid = self.get_pathid(path)
         
         # See if this file with this length is in the databsae
-        self.c.execute("SELECT pathid,hashid from files where path=? and mtime=? and size=? LIMIT 1",(path,st.st_mtime,st.st_size))
+        self.c.execute("SELECT hashid from files where pathid=? and mtime=? and size=? LIMIT 1",(pathid,st.st_mtime,st.st_size))
         row = self.c.fetchone()
-        if row:
-            (pathid,hashid) = row
-            self.c.execute("INSERT into files values (path,mtime,size,hashid,scanid) values (?,?,?,?,?)",
-                           (path,st.st_mtime,st.st_size,hashid,scanid))
-            return
-        # File is not in the database;
-        # Hash it and insert it
-        hashid = self.get_hashid(hash_file(path))
-        self.c.execute("INSERT into files (path,mtime,size,hashid,scanid) values (?,?,?,?,?)",
-                       (path,st.st_mtime,st.st_size,hashid,scanid))
-        
+        try:
+            if row:
+                (hashid,) = row
+            else:
+                hashid = self.get_hashid(hash_file(path))
+            self.c.execute("INSERT into files (pathid,mtime,size,hashid,scanid) values (?,?,?,?,?)",
+                           (pathid,st.st_mtime,st.st_size,hashid,scanid))
+        except PermissionError as e:
+            pass
+        except OSError as e:
+            pass
+        except FileNotFoundError as e:
+            pass
 
     def ingest(self,root):
         import time
@@ -112,19 +122,58 @@ class Scanner(object):
 
         scanid = self.get_scanid(iso_now())
 
+        count = 0
         for (dirpath, dirnames, filenames) in os.walk(root):
+            print(dirpath,end='')
             for filename in filenames:
                 self.process_path(scanid,os.path.join(dirpath,filename))
+            print("   {}".format(len(filenames)))
+            count += len(filenames)
+            self.conn.commit()
 
         self.conn.commit()
+        print("Total files added to database: {}".format(count))
+
+def dump(conn,what):
+    c = conn.cursor()
+    for (scanid,time) in c.execute("select scanid,time from scans"):
+        print(scanid,time)
+
+def execselect(conn,sql,vals):
+    c= conn.cursor()
+    c.execute(sql,vals)
+    return c.fetchone()
+
+
+def report(conn,a,b):
+    atime = execselect(conn,"select time from scans where scanid=?",(a,))[0]
+    btime = execselect(conn,"select time from scans where scanid=?",(b,))[0]
+    print("Report from {}->{}".format(atime,btime))
+    print("New files:")
+    print("Deleted files:")
+    print("Changed files:")
+    print("Renamed files:")
+    print("Duplicate files:")
+    c = conn.cursor()
+    d = conn.cursor()
+    c.execute("select hashid,ct from (select hashid ,count(*) as ct from files where scanid=? group by hashid) natural join hashes where ct>1;",(b,))
+    for (hashid,ct) in c:
+        d.execute("SELECT path FROM files NATURAL JOIN paths WHERE scanid=? and hashid=?",(b,hashid,))
+        for (path) in d:
+            print(path)
+        print("-----------")
+        
 
 if(__name__=="__main__"):
     import argparse
-    parser = argparse.ArgumentParser(description='Compute file changes')
+    parser = argparse.ArgumentParser(description='Compute file changes',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('roots', type=str, nargs='*', help='Directories to process')
     parser.add_argument("--debug",action="store_true")
     parser.add_argument("--create",action="store_true",help="Create database")
     parser.add_argument("--db",help="Specify database location",default="data.sqlite3")
+    parser.add_argument("--dump",help="[scans]")
+    parser.add_argument("--report",default="1-2",help="Report what's changed between 1 and 2")
 
     args = parser.parse_args()
 
@@ -135,6 +184,17 @@ if(__name__=="__main__"):
             pass
         conn = sqlite3.connect(args.db)
         create_schema(conn)
+
+    if args.dump:
+        dump(sqlite3.connect(args.db),args.dump)
+        exit(0)
+
+    if args.report:
+        m = re.search("(\d+)-(\d+)",args.report)
+        if not m:
+            print("Usage: --report N-M")
+            exit(1)
+        report(sqlite3.connect(args.db),int(m.group(1)),int(m.group(2)))
 
     s = Scanner(args.db)
 
