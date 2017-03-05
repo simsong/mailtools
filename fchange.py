@@ -26,15 +26,24 @@ CREATE INDEX IF NOT EXISTS files_idx3 ON files(size);
 CREATE INDEX IF NOT EXISTS files_idx4 ON files(hashid);
 CREATE INDEX IF NOT EXISTS files_idx5 ON files(scanid);
 
-CREATE TABLE IF NOT EXISTS paths (pathid INTEGER PRIMARY KEY,path TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS paths (pathid INTEGER PRIMARY KEY,dirnameid INTEGER NOT NULL, filenameid INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS paths_idx1 ON paths(pathid);
-CREATE INDEX IF NOT EXISTS paths_idx2 ON paths(path);
+CREATE INDEX IF NOT EXISTS paths_idx2 ON paths(dirnameid);
+CREATE INDEX IF NOT EXISTS paths_idx3 ON paths(filenameid);
+
+CREATE TABLE IF NOT EXISTS dirnames (dirnameid INTEGER PRIMARY KEY,dirname TEXT NOT NULL UNIQUE);
+CREATE INDEX IF NOT EXISTS dirnames_idx1 ON dirnames(dirnameid);
+CREATE INDEX IF NOT EXISTS dirnames_idx2 ON dirnames(dirname);
+
+CREATE TABLE IF NOT EXISTS filenames (filenameid INTEGER PRIMARY KEY,filename TEXT NOT NULL UNIQUE);
+CREATE INDEX IF NOT EXISTS filenames_idx1 ON filenames(filenameid);
+CREATE INDEX IF NOT EXISTS filenames_idx2 ON filenames(filename);
 
 CREATE TABLE IF NOT EXISTS hashes (hashid INTEGER PRIMARY KEY,hash TEXT NOT NULL UNIQUE);
 CREATE INDEX IF NOT EXISTS hashes_idx1 ON hashes(hashid);
 CREATE INDEX IF NOT EXISTS hashes_idx2 ON hashes(hash);
 
-CREATE TABLE IF NOT EXISTS scans (scanid INTEGER PRIMARY KEY,time DATETIME NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS scans (scanid INTEGER PRIMARY KEY,time DATETIME NOT NULL UNIQUE,duration INTEGER);
 CREATE INDEX IF NOT EXISTS scans_idx1 ON scans(scanid);
 CREATE INDEX IF NOT EXISTS scans_idx2 ON scans(time);
 
@@ -69,9 +78,9 @@ def hash_file(path):
         
 
 class Scanner(object):
-    def __init__(self,db):
-        self.conn = sqlite3.connect(args.db)
-        c = self.conn.cursor()
+    def __init__(self,conn):
+        self.conn = conn
+        self.c = self.conn.cursor()
 
     def get_hashid(self,hash):
         self.c.execute("INSERT or IGNORE INTO hashes (hash) VALUES (?);",(hash,))
@@ -84,9 +93,21 @@ class Scanner(object):
         return self.c.fetchone()[0]
 
     def get_pathid(self,path):
-        self.c.execute("INSERT or IGNORE INTO paths (path) VALUES (?);",(path,))
-        self.c.execute("SELECT pathid from paths where path=?",(path,))
-        return self.c.fetchone()[0]
+        (dirname,filename) = os.path.split(path)
+        # dirname
+        self.c.execute("INSERT or IGNORE INTO dirnames (dirname) VALUES (?);",(dirname,))
+        self.c.execute("SELECT dirnameid from dirnames where dirname=?",(dirname,))
+        dirnameid = self.c.fetchone()[0]
+
+        # filename
+        self.c.execute("INSERT or IGNORE INTO filenames (filename) VALUES (?);",(filename,))
+        self.c.execute("SELECT filenameid from filenames where filename=?",(filename,))
+        filenameid = self.c.fetchone()[0]
+
+        # pathid
+        self.c.execute("INSERT or IGNORE INTO paths (dirnameid,filenameid) VALUES (?,?);",(dirnameid,filenameid,))
+        self.c.execute("SELECT pathid from paths where dirnameid=? and filenameid=?",(dirnameid,filenameid,))
+        return self.c.fetchone()[0]        
 
     def process_path(self,scanid,path):
         """ Add the file to the database database. If it is there and the mtime hasn't been changed, don't re-hash."""
@@ -123,6 +144,7 @@ class Scanner(object):
         scanid = self.get_scanid(iso_now())
 
         count = 0
+        t0 = time.time()
         for (dirpath, dirnames, filenames) in os.walk(root):
             print(dirpath,end='')
             for filename in filenames:
@@ -132,7 +154,18 @@ class Scanner(object):
             self.conn.commit()
 
         self.conn.commit()
+        t1 = time.time()
+        self.c.execute("UPDATE scans set duration=? where scanid=?",(t1-t0,scanid)) 
         print("Total files added to database: {}".format(count))
+        print("Total time: {}".format(t1-t0))
+
+def get_pathname(conn,pathid):
+    c = conn.cursor()
+    c.execute("SELECT fileid,dirname,filename FROM files " +
+              "NATURAL JOIN paths NATURAL JOIN dirnames NATURAL JOIN filenames " +
+              "where fileid=?",(pathid,))
+    (fileid,dirname,filename) = c.fetchone()
+    return dirname + filename
 
 def dump(conn,what):
     c = conn.cursor()
@@ -144,7 +177,6 @@ def execselect(conn,sql,vals):
     c.execute(sql,vals)
     return c.fetchone()
 
-
 def report(conn,a,b):
     atime = execselect(conn,"select time from scans where scanid=?",(a,))[0]
     btime = execselect(conn,"select time from scans where scanid=?",(b,))[0]
@@ -152,6 +184,13 @@ def report(conn,a,b):
     print("New files:")
     print("Deleted files:")
     print("Changed files:")
+    c = conn.ciursor()
+    c.execute("SELECT a.pathid,a.hashid,b.hashid FROM (SELECT pathid, hashid, scanid FROM files WHERE scanid=1) AS 'a' " +
+              "JOIN (SELECT pathid, hashid, scanid FROM FILES WHERE scanid=2) as 'b' " +
+              "ON a.pathid=b.pathid WHERE a.hashid != b.hashid")
+    for (pathid,hash1,hash2) in c:
+        print
+
     print("Renamed files:")
     print("Duplicate files:")
     c = conn.cursor()
@@ -173,7 +212,7 @@ if(__name__=="__main__"):
     parser.add_argument("--create",action="store_true",help="Create database")
     parser.add_argument("--db",help="Specify database location",default="data.sqlite3")
     parser.add_argument("--dump",help="[scans]")
-    parser.add_argument("--report",default="1-2",help="Report what's changed between 1 and 2")
+    parser.add_argument("--report",help="Report what's changed between scans A and B (e.g. A-B)")
 
     args = parser.parse_args()
 
@@ -184,22 +223,25 @@ if(__name__=="__main__"):
             pass
         conn = sqlite3.connect(args.db)
         create_schema(conn)
+        print("Created")
 
     if args.dump:
         dump(sqlite3.connect(args.db),args.dump)
         exit(0)
+
+    conn = sqlite3.connect(args.db)
+    conn.cursor().execute("PRAGMA cache_size = 200000;") # give me a big cache
 
     if args.report:
         m = re.search("(\d+)-(\d+)",args.report)
         if not m:
             print("Usage: --report N-M")
             exit(1)
-        report(sqlite3.connect(args.db),int(m.group(1)),int(m.group(2)))
+        report(conn,int(m.group(1)),int(m.group(2)))
 
-    s = Scanner(args.db)
 
     if args.roots:
+        s = Scanner(conn)
         for root in args.roots:
             print(root)
             s.ingest(root)
-
