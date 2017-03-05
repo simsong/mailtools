@@ -181,15 +181,31 @@ def report(conn,a,b):
     atime = execselect(conn,"select time from scans where scanid=?",(a,))[0]
     btime = execselect(conn,"select time from scans where scanid=?",(b,))[0]
     print("Report from {}->{}".format(atime,btime))
+
+    print("\n")
     print("New files:")
+    c = conn.cursor()
+    c.execute("SELECT pathid, dirname, filename FROM files NATURAL JOIN paths NATURAL JOIN dirnames NATURAL JOIN filenames " +
+              "where scanid=2 and pathid not in (select pathid from files where scanid=1)")
+    for (pathid, dirname, filename) in c:
+        print(dirname+filename)
+
+    print("\n")
     print("Deleted files:")
+    c = conn.cursor()
+    c.execute("select pathid, dirname, filename FROM files NATURAL JOIN paths NATURAL JOIN dirnames NATURAL JOIN filenames " +
+              "where scanid=1 and pathid not in (select pathid from files where scanid=2)")
+    for (pathid, dirname, filename) in c:
+        print(dirname+filename)
+
+    print("\n")
     print("Changed files:")
-    c = conn.ciursor()
+    c = conn.cursor()
     c.execute("SELECT a.pathid,a.hashid,b.hashid FROM (SELECT pathid, hashid, scanid FROM files WHERE scanid=1) AS 'a' " +
               "JOIN (SELECT pathid, hashid, scanid FROM FILES WHERE scanid=2) as 'b' " +
               "ON a.pathid=b.pathid WHERE a.hashid != b.hashid")
     for (pathid,hash1,hash2) in c:
-        print
+        print(get_pathname(conn,pathid))
 
     print("Renamed files:")
     print("Duplicate files:")
@@ -197,9 +213,10 @@ def report(conn,a,b):
     d = conn.cursor()
     c.execute("select hashid,ct from (select hashid ,count(*) as ct from files where scanid=? group by hashid) natural join hashes where ct>1;",(b,))
     for (hashid,ct) in c:
-        d.execute("SELECT path FROM files NATURAL JOIN paths WHERE scanid=? and hashid=?",(b,hashid,))
-        for (path) in d:
-            print(path)
+        d.execute("SELECT dirname,filename FROM files NATURAL JOIN paths NATURAL JOIN dirnames NATURAL JOIN filenames " +
+                  "WHERE scanid=? and hashid=?",(b,hashid,))
+        for (dirname,filename) in d:
+            print(dirname+filename)
         print("-----------")
         
 
