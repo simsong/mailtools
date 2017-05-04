@@ -59,11 +59,15 @@ Apple Schema - What I've learned
   CREATE TABLE subjects (ROWID INTEGER PRIMARY KEY,                // rowid is messages.subject
                          subject COLLATE RTRIM,
                          normalized_subject COLLATE RTRIM);
+  * subject is the original subject
+  * normalized_subject is all lower-case
 
   CREATE TABLE addresses (ROWID INTEGER PRIMARY KEY,
                           address COLLATE NOCASE,
                           comment,
                           UNIQUE(address, comment));
+  * Table for every (address,name) seen
+  * Maps each to a uniqueID that's used for messages.sender and for recipients.address_id
 
 
   CREATE TABLE "recipients" (ROWID INTEGER PRIMARY KEY,
