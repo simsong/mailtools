@@ -7,15 +7,14 @@ __version__ = '0.0.1'
 
 import sqlite3
 import os, sys, time
+import datetime
+
 
 if sys.version_info < (3, 4): raise RuntimeError("Requires Python 3.4 or above")
 
-appleMailDB = os.path.join(os.getenv("HOME"), "Library/Mail/V4/MailData/Envelope Index")
-conn = sqlite3.connect(appleMailDB)
-
-
-def t(x):
-    return time.asctime(time.localtime(x))
+meDefault = os.environ["USER"] + "@"
+appleMailDB = "Envelope Index"
+conn = sqlite3.connect(appleMailDB,uri=True)
 
 
 def sqlv(c, s):
@@ -23,9 +22,38 @@ def sqlv(c, s):
     return c.fetchone()[0]
 
 
-def report_sender(address, ids_and_names):
+class Email:
+    """Represents an email address"""
+    __slots__ = ['id','address','comment']
+    def __init__(self,id,address,comment):
+        self.id = id
+        self.address = address
+        self.comment = comment
+    def idstr(self):
+        return str(self.id)
+
+
+
+def getSenderIDs(email):
+    print("email=",email)
+    c = conn.cursor()
+    for (rowid, address, comment) \
+            in c.execute("SELECT rowid,address,comment FROM addresses WHERE address LIKE ? ORDER BY address",
+                         (email+"%",)):
+        yield Email(rowid, address, comment)
+
+def sqlIdsForEmail(email):
+    print(email)
+    return ",".join([str(e.id) for e in getSenderIDs(email)])
+
+def search_addresses(email):
+    addresses = set()
+    for e in getSenderIDs(email):
+        addresses.add(e)
+
+def report_sender(address, emails):
     # Compute the count for each message sent by each ID
-    ids = [str(a[0]) for a in ids_and_names]
+    ids = [e.idstr() for e in emails]
     id_list = "(" + ",".join(ids) + ")"
     c = conn.cursor()
 
@@ -39,7 +67,7 @@ def report_sender(address, ids_and_names):
         recv_count[id] = count
 
     print("{}   ({} / {}):".format(address,sum(sent_count.values()),sum(recv_count.values())))
-    for (id, name) in ids_and_names:
+    for (id, name) in emails:
         if name:
             print("     {}  ({} / {})".format(name,
                                               sent_count.get(id,""),
@@ -49,25 +77,50 @@ def report_sender(address, ids_and_names):
 
 def report_senders(email):
     from collections import defaultdict
-    addresses = defaultdict(list)
+    emails = defaultdict(list)
     c = conn.cursor()
-    for (rowid, address, comment) \
-            in c.execute("SELECT rowid,address,comment FROM addresses WHERE address LIKE ? ORDER BY address", (email,)):
-        addresses[address].append((rowid, comment))
-    for address in addresses:
-        report_sender(address, addresses[address])
-    print("Total email addresses: {}".format(len(addresses)))
+    for e in getSenderIDs(email):
+        emails[e.address].append(e)
+    for address in emails:
+        report_sender(address, emails[address])
+    print("Total email addresses: {}".format(len(emails)))
+
+
+def tdate(x):
+    return datetime.datetime(*time.localtime(x)[:6]).date()
+
+
+def report_daily_messages():
+    c = conn.cursor()
+    c.execute("SELECT m.date_sent,m.subject_prefix,s.subject,s.normalized_subject "
+              "FROM messages AS m LEFT JOIN subjects AS s WHERE m.subject=s.rowid ORDER BY date_sent LIMIT 100")
+    for (date_sent, subject_prefix, subject, normalized_subject) in c:
+        if subject != normalized_subject:
+            print(tdate(date_sent), subject_prefix, "subject=", subject, "normalized_subject=", normalized_subject)
+
+def report_daily():
+    c = conn.cursor()
+    cmd = "SELECT d,sum(e)-sum(f),sum(f) FROM (select date(date_sent,'unixepoch') as d, 1 as e, sender in ("+sqlIdsForEmail(opts.me)+") as f from messages) GROUP BY d"
+    print(cmd)
+    c.execute(cmd)
+    for (d,e,f) in c:
+        print(d,e,f)
+
+
 
 
 if __name__ == "__main__":
     import argparse
 
     a = argparse.ArgumentParser()
+    a.add_argument("--me", help="Sepcifies your username", default=meDefault)
     a.add_argument("--db", help="Specifies input database", default=appleMailDB)
     a.add_argument("--search", help="Search for information about SEARCH")
     a.add_argument("--sender", help="Information about SENDER; SENDER can be a partial email address")
     a.add_argument("--senders", help="Report on all senders", action="store_true")
+    a.add_argument("--daily", help="Report daily messages sent and received", action="store_true")
     opts = a.parse_args()
+    print(opts.me)
     if opts.search:
         search_addresses(opts.sender)
         exit(0)
@@ -76,10 +129,5 @@ if __name__ == "__main__":
         if opts.senders: report_senders("")
         exit(0)
 
-    c = conn.cursor()
-    print("Total messages: {:0,}".format(sqlv(c, "select count(*) from messages")))
-    c.execute("SELECT m.date_sent,m.subject_prefix,s.subject,s.normalized_subject "
-              "FROM messages AS m LEFT JOIN subjects AS s WHERE m.subject=s.rowid ORDER BY date_sent LIMIT 100")
-    for (date_sent, subject_prefix, subject, normalized_subject) in c:
-        if subject != normalized_subject:
-            print(t(date_sent), subject_prefix, "subject=", subject, "normalized_subject=", normalized_subject)
+    if opts.daily:
+        report_daily()
