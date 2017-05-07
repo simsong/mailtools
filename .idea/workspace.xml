@@ -2,7 +2,6 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="458591ab-5afa-4798-ae71-b8e53e763fd8" name="Default" comment="">
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/.idea/sqldialects.xml" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/mreport.py" afterPath="$PROJECT_DIR$/mreport.py" />
     </list>
@@ -45,20 +44,20 @@
       <file leaf-file-name="mreport.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/mreport.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="566">
-              <caret line="102" column="166" lean-forward="false" selection-start-line="102" selection-start-column="166" selection-end-line="102" selection-end-column="166" />
+            <state relative-caret-position="479">
+              <caret line="116" column="11" lean-forward="false" selection-start-line="116" selection-start-column="11" selection-end-line="116" selection-end-column="11" />
               <folding>
                 <element signature="e#110#124#0" expanded="true" />
-                <marker date="1494039485000" expanded="true" signature="830:911" ph="SELECT rowid... addresses" />
-                <marker date="1494039485000" expanded="true" signature="1578:1631" ph="SELECT id,co... messages" />
-                <marker date="1494039485000" expanded="true" signature="1578:1652" ph="SELECT id,co... messages" />
-                <marker date="1494039485000" expanded="true" signature="1578:1658" ph="SELECT sende... messages" />
-                <marker date="1494039485000" expanded="true" signature="1811:1873" ph="SELECT addre... recepients" />
-                <marker date="1494039485000" expanded="true" signature="1811:1874" ph="SELECT addre... recepients" />
-                <marker date="1494039485000" expanded="true" signature="1811:1905" ph="SELECT addre... recipients" />
-                <marker date="1494039485000" expanded="true" signature="2758:2937" ph="SELECT m.dat... messages" />
-                <marker date="1494039485000" expanded="true" signature="3223:3378" ph="SELECT d,e,f... " />
-                <marker date="1494039485000" expanded="true" signature="3259:3366" ph="select date(... " />
+                <marker date="1494194632000" expanded="true" signature="845:926" ph="SELECT rowid... addresses" />
+                <marker date="1494194632000" expanded="true" signature="1593:1646" ph="SELECT id,co... messages" />
+                <marker date="1494194632000" expanded="true" signature="1593:1667" ph="SELECT id,co... messages" />
+                <marker date="1494194632000" expanded="true" signature="1593:1673" ph="SELECT sende... messages" />
+                <marker date="1494194632000" expanded="true" signature="1826:1888" ph="SELECT addre... recepients" />
+                <marker date="1494194632000" expanded="true" signature="1826:1889" ph="SELECT addre... recepients" />
+                <marker date="1494194632000" expanded="true" signature="1826:1920" ph="SELECT addre... recipients" />
+                <marker date="1494194632000" expanded="true" signature="2773:2952" ph="SELECT m.dat... messages" />
+                <marker date="1494194632000" expanded="true" signature="3347:3525" ph="SELECT d,e,f... " />
+                <marker date="1494194632000" expanded="true" signature="3397:3513" ph="select date(... " />
               </folding>
             </state>
           </provider>
@@ -94,7 +93,7 @@
         <entry file="file://$PROJECT_DIR$/schema.sql">
           <provider selected="true" editor-type-id="text-editor">
             <state relative-caret-position="255">
-              <caret line="17" column="0" lean-forward="true" selection-start-line="17" selection-start-column="0" selection-end-line="17" selection-end-column="0" />
+              <caret line="17" column="0" lean-forward="false" selection-start-line="17" selection-start-column="0" selection-end-line="17" selection-end-column="0" />
               <folding />
             </state>
           </provider>
@@ -128,7 +127,7 @@
   <component name="ProjectFrameBounds">
     <option name="x" value="241" />
     <option name="y" value="23" />
-    <option name="width" value="1992" />
+    <option name="width" value="1503" />
     <option name="height" value="1344" />
   </component>
   <component name="ProjectLevelVcsManager">
@@ -149,8 +148,6 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
-      <pane id="Scope" />
-      <pane id="Scratches" />
       <pane id="ProjectPane">
         <subPane>
           <PATH>
@@ -165,6 +162,8 @@
           </PATH>
         </subPane>
       </pane>
+      <pane id="Scratches" />
+      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
@@ -428,21 +427,20 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="241" y="23" width="1992" height="1344" extended-state="0" />
+    <frame x="241" y="23" width="1503" height="1344" extended-state="0" />
     <editor active="true" />
     <layout>
+      <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.20492348" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
-      <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.17254902" sideWeight="0.502008" order="7" side_tool="true" content_ui="tabs" />
-      <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32934132" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
-      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
-      <window_info id="Python Console" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.17254902" sideWeight="0.49799198" order="7" side_tool="false" content_ui="tabs" />
-      <window_info id="Terminal" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
-      <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.15461847" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
+      <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.17254902" sideWeight="0.50499004" order="7" side_tool="true" content_ui="tabs" />
       <window_info id="Database" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
+      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
+      <window_info id="Python Console" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.17254902" sideWeight="0.49501" order="7" side_tool="false" content_ui="tabs" />
+      <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32934132" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
-      <window_info id="Concurrent Activities Diagram" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32934132" sideWeight="0.49716598" order="-1" side_tool="false" content_ui="tabs" />
-      <window_info id="Debug" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.3997006" sideWeight="0.49716598" order="3" side_tool="false" content_ui="tabs" />
+      <window_info id="Terminal" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Favorites" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="2" side_tool="true" content_ui="tabs" />
+      <window_info id="Debug" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.3997006" sideWeight="0.49716598" order="3" side_tool="false" content_ui="tabs" />
       <window_info id="Data View" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="4" side_tool="false" content_ui="tabs" />
       <window_info id="Cvs" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="4" side_tool="false" content_ui="tabs" />
       <window_info id="Message" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="0" side_tool="false" content_ui="tabs" />
@@ -451,6 +449,7 @@
       <window_info id="Hierarchy" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="2" side_tool="false" content_ui="combo" />
       <window_info id="Find" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32934132" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Ant Build" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
+      <window_info id="Concurrent Activities Diagram" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32934132" sideWeight="0.49716598" order="8" side_tool="false" content_ui="tabs" />
     </layout>
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -466,6 +465,64 @@
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/../anly502_2017/lib/validator.py">
       <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="2670">
+          <caret line="178" column="47" lean-forward="false" selection-start-line="178" selection-start-column="47" selection-end-line="178" selection-end-column="47" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/README.md">
+      <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
+        <state split_layout="SPLIT">
+          <first_editor relative-caret-position="0">
+            <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+            <folding />
+          </first_editor>
+          <second_editor />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/spec.md">
+      <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
+        <state split_layout="SPLIT">
+          <first_editor relative-caret-position="0">
+            <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+            <folding />
+          </first_editor>
+          <second_editor />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/schema.sql">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="255">
+          <caret line="17" column="0" lean-forward="true" selection-start-line="17" selection-start-column="0" selection-end-line="17" selection-end-column="0" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mreport.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="1485">
+          <caret line="101" column="104" lean-forward="false" selection-start-line="101" selection-start-column="104" selection-end-line="101" selection-end-column="104" />
+          <folding>
+            <element signature="e#110#124#0" expanded="true" />
+            <marker date="1494194632000" expanded="true" signature="845:926" ph="SELECT rowid... addresses" />
+            <marker date="1494194632000" expanded="true" signature="1593:1646" ph="SELECT id,co... messages" />
+            <marker date="1494194632000" expanded="true" signature="1593:1667" ph="SELECT id,co... messages" />
+            <marker date="1494194632000" expanded="true" signature="1593:1673" ph="SELECT sende... messages" />
+            <marker date="1494194632000" expanded="true" signature="1826:1888" ph="SELECT addre... recepients" />
+            <marker date="1494194632000" expanded="true" signature="1826:1889" ph="SELECT addre... recepients" />
+            <marker date="1494194632000" expanded="true" signature="1826:1920" ph="SELECT addre... recipients" />
+            <marker date="1494194632000" expanded="true" signature="2773:2952" ph="SELECT m.dat... messages" />
+            <marker date="1494194632000" expanded="true" signature="3347:3525" ph="SELECT d,e,f... " />
+            <marker date="1494194632000" expanded="true" signature="3397:3513" ph="select date(... " />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/../anly502_2017/lib/validator.py">
+      <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
           <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
           <folding />
@@ -478,16 +535,16 @@
           <caret line="49" column="26" lean-forward="true" selection-start-line="49" selection-start-column="26" selection-end-line="49" selection-end-column="26" />
           <folding>
             <element signature="e#110#124#0" expanded="true" />
-            <marker date="1494039485000" expanded="true" signature="830:911" ph="SELECT rowid... addresses" />
-            <marker date="1494039485000" expanded="true" signature="1578:1631" ph="SELECT id,co... messages" />
-            <marker date="1494039485000" expanded="true" signature="1578:1652" ph="SELECT id,co... messages" />
-            <marker date="1494039485000" expanded="true" signature="1578:1658" ph="SELECT sende... messages" />
-            <marker date="1494039485000" expanded="true" signature="1811:1873" ph="SELECT addre... recepients" />
-            <marker date="1494039485000" expanded="true" signature="1811:1874" ph="SELECT addre... recepients" />
-            <marker date="1494039485000" expanded="true" signature="1811:1905" ph="SELECT addre... recipients" />
-            <marker date="1494039485000" expanded="true" signature="2758:2937" ph="SELECT m.dat... messages" />
-            <marker date="1494039485000" expanded="true" signature="3223:3378" ph="SELECT d,e,f... " />
-            <marker date="1494039485000" expanded="true" signature="3259:3366" ph="select date(... " />
+            <marker date="1494194632000" expanded="true" signature="845:926" ph="SELECT rowid... addresses" />
+            <marker date="1494194632000" expanded="true" signature="1593:1646" ph="SELECT id,co... messages" />
+            <marker date="1494194632000" expanded="true" signature="1593:1667" ph="SELECT id,co... messages" />
+            <marker date="1494194632000" expanded="true" signature="1593:1673" ph="SELECT sende... messages" />
+            <marker date="1494194632000" expanded="true" signature="1826:1888" ph="SELECT addre... recepients" />
+            <marker date="1494194632000" expanded="true" signature="1826:1889" ph="SELECT addre... recepients" />
+            <marker date="1494194632000" expanded="true" signature="1826:1920" ph="SELECT addre... recipients" />
+            <marker date="1494194632000" expanded="true" signature="2773:2952" ph="SELECT m.dat... messages" />
+            <marker date="1494194632000" expanded="true" signature="3347:3525" ph="SELECT d,e,f... " />
+            <marker date="1494194632000" expanded="true" signature="3397:3513" ph="select date(... " />
           </folding>
         </state>
       </provider>
@@ -520,23 +577,12 @@
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/README.md">
-      <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
-        <state split_layout="SPLIT">
-          <first_editor relative-caret-position="0">
-            <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-            <folding />
-          </first_editor>
-          <second_editor />
-        </state>
-      </provider>
       <provider editor-type-id="text-editor">
         <state relative-caret-position="0">
           <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
           <folding />
         </state>
       </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/spec.md">
       <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
         <state split_layout="SPLIT">
           <first_editor relative-caret-position="0">
@@ -546,37 +592,48 @@
           <second_editor />
         </state>
       </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/spec.md">
       <provider editor-type-id="text-editor">
         <state relative-caret-position="209">
           <caret line="72" column="26" lean-forward="false" selection-start-line="72" selection-start-column="16" selection-end-line="72" selection-end-column="26" />
           <folding />
         </state>
       </provider>
+      <provider selected="true" editor-type-id="split-provider[text-editor;markdown-preview-editor]">
+        <state split_layout="SPLIT">
+          <first_editor relative-caret-position="0">
+            <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+            <folding />
+          </first_editor>
+          <second_editor />
+        </state>
+      </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/schema.sql">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="255">
-          <caret line="17" column="0" lean-forward="true" selection-start-line="17" selection-start-column="0" selection-end-line="17" selection-end-column="0" />
+          <caret line="17" column="0" lean-forward="false" selection-start-line="17" selection-start-column="0" selection-end-line="17" selection-end-column="0" />
           <folding />
         </state>
       </provider>
     </entry>
     <entry file="file://$PROJECT_DIR$/mreport.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="566">
-          <caret line="102" column="166" lean-forward="false" selection-start-line="102" selection-start-column="166" selection-end-line="102" selection-end-column="166" />
+        <state relative-caret-position="479">
+          <caret line="116" column="11" lean-forward="false" selection-start-line="116" selection-start-column="11" selection-end-line="116" selection-end-column="11" />
           <folding>
             <element signature="e#110#124#0" expanded="true" />
-            <marker date="1494039485000" expanded="true" signature="830:911" ph="SELECT rowid... addresses" />
-            <marker date="1494039485000" expanded="true" signature="1578:1631" ph="SELECT id,co... messages" />
-            <marker date="1494039485000" expanded="true" signature="1578:1652" ph="SELECT id,co... messages" />
-            <marker date="1494039485000" expanded="true" signature="1578:1658" ph="SELECT sende... messages" />
-            <marker date="1494039485000" expanded="true" signature="1811:1873" ph="SELECT addre... recepients" />
-            <marker date="1494039485000" expanded="true" signature="1811:1874" ph="SELECT addre... recepients" />
-            <marker date="1494039485000" expanded="true" signature="1811:1905" ph="SELECT addre... recipients" />
-            <marker date="1494039485000" expanded="true" signature="2758:2937" ph="SELECT m.dat... messages" />
-            <marker date="1494039485000" expanded="true" signature="3223:3378" ph="SELECT d,e,f... " />
-            <marker date="1494039485000" expanded="true" signature="3259:3366" ph="select date(... " />
+            <marker date="1494194632000" expanded="true" signature="845:926" ph="SELECT rowid... addresses" />
+            <marker date="1494194632000" expanded="true" signature="1593:1646" ph="SELECT id,co... messages" />
+            <marker date="1494194632000" expanded="true" signature="1593:1667" ph="SELECT id,co... messages" />
+            <marker date="1494194632000" expanded="true" signature="1593:1673" ph="SELECT sende... messages" />
+            <marker date="1494194632000" expanded="true" signature="1826:1888" ph="SELECT addre... recepients" />
+            <marker date="1494194632000" expanded="true" signature="1826:1889" ph="SELECT addre... recepients" />
+            <marker date="1494194632000" expanded="true" signature="1826:1920" ph="SELECT addre... recipients" />
+            <marker date="1494194632000" expanded="true" signature="2773:2952" ph="SELECT m.dat... messages" />
+            <marker date="1494194632000" expanded="true" signature="3347:3525" ph="SELECT d,e,f... " />
+            <marker date="1494194632000" expanded="true" signature="3397:3513" ph="select date(... " />
           </folding>
         </state>
       </provider>

@@ -8,7 +8,7 @@ __version__ = '0.0.1'
 import sqlite3
 import os, sys, time
 import datetime
-
+import dateutil
 
 if sys.version_info < (3, 4): raise RuntimeError("Requires Python 3.4 or above")
 
@@ -99,12 +99,28 @@ def report_daily_messages():
             print(tdate(date_sent), subject_prefix, "subject=", subject, "normalized_subject=", normalized_subject)
 
 def report_daily():
+    """"For each day, report the date, the number of messages received, and the number of messages sent."""
+
     c = conn.cursor()
-    cmd = "SELECT d,sum(e)-sum(f),sum(f) FROM (select date(date_sent,'unixepoch') as d, 1 as e, sender in ("+sqlIdsForEmail(opts.me)+") as f from messages) GROUP BY d"
-    print(cmd)
+    cmd = "SELECT d,sum(total)-sum(sender),sum(sender) FROM (select date(date_sent,'unixepoch') as d, 1 as total, sender in ("+sqlIdsForEmail(opts.me)+") as sender from messages) GROUP BY d"
     c.execute(cmd)
-    for (d,e,f) in c:
-        print(d,e,f)
+    sent = dict()
+    recv = dict()
+    for (datestr,recv_count,sent_count) in c:
+        date = datetime.datetime.strptime(datestr,"%Y-%m-%d")
+        if sent_count:
+            sent[date] = sent_count
+        if recv_count:
+            recv[date] = recv_count
+    print("Messages Sent: {}  ({} days from {} to {})".format(sum(sent.values()),len(sent.keys()),min(sent.keys()),max(sent.keys())))
+    print("Messages Recv: {}  ({} days from {} to {})".format(sum(recv.values()),len(recv.keys()),min(recv.keys()),max(recv.keys())))
+    print("Days without both SENT and RECV:")
+    from dateutil.rrule import rrule,DAILY
+    for day in rrule(DAILY,dtstart=min(sent.keys())).between(min(sent.keys()),max(sent.keys())):
+        if day not in sent or day not in recv:
+            print("    {} {} {}".format(day.date(),"SENT" if day in sent else "    ",
+                                     "RECV" if day in recv else "    "))
+
 
 
 
