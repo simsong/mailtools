@@ -98,6 +98,19 @@ def report_daily_messages():
         if subject != normalized_subject:
             print(tdate(date_sent), subject_prefix, "subject=", subject, "normalized_subject=", normalized_subject)
 
+def MIN(a,b):
+    # Special version of MIN ignores None
+    if a==None: return b
+    if b==None: return a
+    return min(a,b)
+
+def MAX(a,b):
+    # Special version of MAX ignores None
+    if a==None: return b
+    if b==None: return a
+    return max(a,b)
+
+
 def report_daily():
     """"For each day, report the date, the number of messages received, and the number of messages sent."""
 
@@ -112,14 +125,56 @@ def report_daily():
             sent[date] = sent_count
         if recv_count:
             recv[date] = recv_count
-    print("Messages Sent: {}  ({} days from {} to {})".format(sum(sent.values()),len(sent.keys()),min(sent.keys()),max(sent.keys())))
-    print("Messages Recv: {}  ({} days from {} to {})".format(sum(recv.values()),len(recv.keys()),min(recv.keys()),max(recv.keys())))
-    print("Days without both SENT and RECV:")
+    first_sent = min(sent.keys())
+    first_recv = min(recv.keys())
+    first_mesg = min(first_sent,first_recv)
+    print("Messages Sent: {}  ({} days from {} to {})".format(sum(sent.values()),len(sent.keys()),first_sent,max(sent.keys())))
+    print("Messages Recv: {}  ({} days from {} to {})".format(sum(recv.values()),len(recv.keys()),first_recv,max(recv.keys())))
+    print("Days without SENTor RECV:")
     from dateutil.rrule import rrule,DAILY
-    for day in rrule(DAILY,dtstart=min(sent.keys())).between(min(sent.keys()),max(sent.keys())):
-        if day not in sent or day not in recv:
-            print("    {} {} {}".format(day.date(),"SENT" if day in sent else "    ",
-                                     "RECV" if day in recv else "    "))
+    sent_gaps = list()
+    recv_gaps = list()
+    sent_last_gap_start = None
+    sent_last_gap_end = None
+    recv_last_gap_start = None
+    recv_last_gap_end = None
+    for day in rrule(DAILY,dtstart=first_mesg).between(first_mesg,max(list(recv.keys())+list(sent.keys()))):
+        if (day not in sent) or (day not in recv):
+            print("    {} {:8} {:8}".format(day.date(),
+                                        "" if day in sent else "NO-SENT",
+                                        "" if day in recv else "NO-RECV"))
+        if day not in sent:
+            sent_last_gap_start = MIN(day,sent_last_gap_start)
+            sent_last_gap_end   = MAX(day,sent_last_gap_end)
+
+        if day in sent and sent_last_gap_start:
+            gap_days = sent_last_gap_end-sent_last_gap_start+datetime.timedelta(days=1)
+            if gap_days > datetime.timedelta(days=3):
+                sent_gaps.append((sent_last_gap_start,sent_last_gap_end,gap_days))
+            sent_last_gap_start = None
+            sent_last_gap_end = None
+        
+        if day not in recv:
+            recv_last_gap_start = MIN(day,recv_last_gap_start)
+            recv_last_gap_end   = MAX(day,recv_last_gap_end)
+
+        if day in recv and recv_last_gap_start:
+            gap_days = recv_last_gap_end-recv_last_gap_start+datetime.timedelta(days=1)
+            if gap_days > datetime.timedelta(days=3):
+                recv_gaps.append((recv_last_gap_start,recv_last_gap_end,gap_days))
+            recv_last_gap_start = None
+            recv_last_gap_end   = None
+        
+
+    print("Gaps in the SENT MAIL bigger than 3 days:")
+    print("   {} first sent".format(first_sent))
+    for (start,end,days) in sent_gaps:
+        print("   {} - {}     {}".format(start,end,days))
+    print("Gaps in the RECEIVED MAIL bigger than 3 days:")
+    print("   {} first received".format(first_recv))
+    for (start,end,days) in recv_gaps:
+        print("   {} - {}     {}".format(start,end,days))
+    print("No messages received:")
 
 
 
