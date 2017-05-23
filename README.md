@@ -33,3 +33,6 @@ Mail Statistics
 * Email Maining Toolkit, Java: https://github.com/hjast/NLPWorkspace
 * See also https://github.com/mihaip/mail-trends.git
 
+* Identify people who always CC you a dn askt them to stop.
+* Identify email sending times. He map through the day, week.
+* tool for assigning a title to a topic model?
