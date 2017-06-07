@@ -7,6 +7,11 @@ Mail Statistics
   - Dates for sender
   - Dates for sender, and # of emails sent/received per day
 
+* parse all iCal entries in mail
+* LDA on email? 
+* Top emails every week.
+
+
 * Report breaks in mail file. (Days on which mail was not received)
 * Heatmap of when mail is sent
   - weekday / weekend
@@ -17,6 +22,7 @@ Mail Statistics
   - mapping of users to specific topics
   - identify users who email on same topics but do not email each other...?
 
+* Plug-in to Autopsey
 
 # Implementation notes
 

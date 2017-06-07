@@ -2,6 +2,10 @@ Things to do:
 
 * Find missing email messages
 * Find gaps in mail file
+* top-10 senders/receivers each day/week/month
+  - Animate it over time.
+* Different IP addresses for a person. k-means clustering.
+  - Detect if somebody has moved?
 
 
 
