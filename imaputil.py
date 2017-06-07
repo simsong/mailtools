@@ -17,7 +17,7 @@ def parse_list_response(line):
     return (flags, delimiter, mailbox_name)
 
 
-def stats(opts,config):
+def login(opts,config):
     host = config["imap"]["host"]
     user = config["imap"]["user"]
     print("host: ",host)
@@ -32,18 +32,29 @@ def stats(opts,config):
     #M.starttls()
     M = imaplib.IMAP4_SSL(host)
     M.login(user, pw)
+    return M
+
+def stats(opts,config):
+    M = login(opts,config)
+    print("mailboxes:")
     (typ, res) = M.list()
     if typ!="OK":
         print("Cannot list mailboxes: {} {}".format(typ,res))
         exit(1)
-    print("mailboxes:")
     for _ in res:
         (flags, delimiter, mailbox_name) = parse_list_response(_)
         try:
-            status = M.status(f'"{mailbox_name}"',"(MESSAGES RECENT UIDNEXT UIDVALIDITY UNSEEN)")
+            (t, r) = M.status(f'"{mailbox_name}"',"(MESSAGES RECENT UIDNEXT UIDVALIDITY UNSEEN)")
+            r = r[0].decode('utf-8')
+            if r[0]=='"':
+                m = re.search('"(.*)" (.*)',r)
+                flags = m.group(2)
+            else:
+                flags = r.split(" ",maxsplit=1)[1]
+            print("{:20}: {}".format(mailbox_name,flags))
         except imaplib.IMAP4.error as e:
-            status = e
-        print("{:20}: {}".format(mailbox_name,status))
+            r = e
+    print("")
     print("Inbox:")
     M.select()
     (typ, res) = M.search(None, 'ALL')
@@ -53,20 +64,17 @@ def stats(opts,config):
         print(msg.get('Date'),msg.get('Subject'))
         
         
+import mailbox
 
-def mailcopy(u,p):
-    S = imaplib.IMAP4('192.168.1.2')
-    # S.login(u,p)
-    S.login_cram_md5(u,p)
-    S.select()
-
-    D = imaplib.IMAP4('localhost')
-    D.login_cram_md5(u,p)
-    D.select()
+def download(opts,config,mailbox_name):
+    S = login(opts,config)
+    S.select(mailbox_name)
 
     typ, res = S.search(None, 'ALL')
-    print("typ='%s'" % typ)
-    #print "res=",res
+    if typ!="OK":
+        print(res)
+        exit(1)
+    mbox_copy = mailbox.mbox(mailbox_name+".mbox")
     for num in res[0].split():
         ok, date = S.fetch(num, '(INTERNALDATE)')
         date2 = imaplib.Internaldate2tuple(date[0])
@@ -74,13 +82,10 @@ def mailcopy(u,p):
         content = data[0][1]
         flags = data[1]
         flags2 = imaplib.ParseFlags(flags)
-        msg = email.message_from_string(data[0][1])
-        print("Message %s flags=%s %s / %s " % (num,flags,msg.get('Date'),msg.get('Subject')))
-        D.append(None,flags2,date2,content) # #2 is the flags
+        msg = email.message_from_bytes(data[0][1])
+        print("Message %s flags=%s %s / %s / %s " % (num,flags,msg.get('Message-Id').strip(),msg.get('Date'),msg.get('Subject')))
     S.close()
     S.logout()
-    D.close()
-    D.logout()
 
 if __name__ == "__main__":
     import argparse
@@ -88,6 +93,7 @@ if __name__ == "__main__":
     a = argparse.ArgumentParser()
     a.add_argument("--config", help="Specify config file", default="config.ini")
     a.add_argument("--stats", help="print stats about the IMAP directory", action="store_true")
+    a.add_argument("--download", help="Download a mailbox")
     opts = a.parse_args()
 
 
@@ -98,3 +104,6 @@ if __name__ == "__main__":
 
     if opts.stats:
         stats(opts,config)
+
+    if opts.download:
+        download(opts,config,opts.download)
