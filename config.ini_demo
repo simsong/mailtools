@@ -1,0 +1,10 @@
+[DEFAULT]
+from: simsong@acm.org
+csv_file: tally.csv
+keep_cols: Name, Email, domestic, undergraduates, gradautes
+
+
+[imap]
+user: ****
+host: outlook.office365.com
+pass: ****
