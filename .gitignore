@@ -91,3 +91,6 @@ ENV/
 *~
 *.sqlite3
 config.ini
+Archive.mbox
+Envelope?Index
+m57.txt
