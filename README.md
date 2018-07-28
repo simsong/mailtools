@@ -7,6 +7,11 @@ Mail Statistics
   - Dates for sender
   - Dates for sender, and # of emails sent/received per day
 
+* Analytics:
+  - Identify cliques
+  - Draw a map of what times during the day a person sends and reads mail.
+  - Identify where a person is located.
+
 * parse all iCal entries in mail
 * LDA on email? 
 * Top emails every week.
