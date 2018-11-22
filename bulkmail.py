@@ -21,6 +21,7 @@ import sys
 import os
 import datetime
 import mailbox
+import time
 import email.errors
 import email.parser
 from email.parser import BytesParser
@@ -30,12 +31,12 @@ import smtplib
 
 USE_SENDMAIL=False
 
-def sendmail(config,from_addr,to_addrs,msg):
+def sendmail(config,from_addr,to_addrs,msg,debug=False):
     """Send out the message by sendmail"""
-    if opts.dry_run:
+    if args.dry_run:
         print("==== Will not send this message: ====\n{}\n====================\n".format(msg))
         return False
-    if opts.debug:
+    if args.debug:
         to = re.findall("to:.*$", msg, re.I|re.M)[0:1][0]
         print("Sending mail {}".format(to))
     if USE_SENDMAIL:
@@ -44,7 +45,7 @@ def sendmail(config,from_addr,to_addrs,msg):
         return True
     host = config['smtp']['server']
     with smtplib.SMTP(host,587) as smtp:
-        if args.debug:
+        if debug:
             smtp.set_debuglevel(1)
         smtp.ehlo()
         smtp.starttls()
@@ -90,23 +91,26 @@ if __name__=="__main__":
     a.add_argument("--dry-run", help="do not send out email or refile messages", action="store_true")
     a.add_argument("--debug",   help="debug", action="store_true")
     a.add_argument("--addresses", help="input file for addresses")
+    a.add_argument("--delay",   type=float, default=1.0)
     a.add_argument("inputs",    nargs="*")
-    opts = a.parse_args()
+    args = a.parse_args()
 
     import configparser
     config = configparser.ConfigParser()
-    config.read(opts.config)
+    config.read(args.config)
 
-    if opts.test:
-        to_addr = opts.test
+    if args.test:
+        to_addr = args.test
         params = {'to':to_addr,'firstname':"Simson"}
         sendmail(config,'simsong@acm.org',[to_addr],make_msg(config,params))
         exit(1)
 
-    if opts.addresses:
-        with open(opts.addresses) as f:
+    if args.addresses:
+        with open(args.addresses) as f:
             for line in f:
-                name = line.strip()
-                msg = make_msg(config,{'to':name})
-                sendmail(config,msg)
+                (first,last,email) = line.strip().split(",")
+                params = {'firstname':first, 'to':f'"{first} {last}" <{email}>'}
+                print(params['to'])
+                sendmail(config,config['bulkmail']['from'],[email],make_msg(config,params),debug=args.debug)
+                time.sleep(args.delay)
                 
