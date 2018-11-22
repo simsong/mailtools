@@ -1,0 +1,7 @@
+Who send mail on different dates:
+
+select datetime(date_sent,'unixepoch'),address,subjects.subject from messages left join addresses on messages.sender=addresses.rowid left join subjects on messages.subject=subjects.rowid order by 1 limit 100;
+
+Who sent mail in last 12 months:
+
+select datetime(date_sent,'unixepoch'),address,subjects.subject from messages left join addresses on messages.sender=addresses.rowid left join subjects on messages.subject=subjects.rowid where date_sent > strftime('%s','now') - 60*60*24*365 order by 1 limit 100;

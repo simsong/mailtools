@@ -1,5 +1,5 @@
-# mailstats
-Mail Statistics
+# Mail Statistics
+Right now, this git repository is where Simson is throwing lots of code that has been developed to process email
 
 # Functionality we want
 * Basic retrieval tools:
