@@ -1,8 +1,15 @@
-[DEFAULT]
+[autoresponder]
 from: simsong@acm.org
 csv_file: tally.csv
 keep_cols: Name, Email, domestic, undergraduates, gradautes
 
+[bulkmail]
+msg_file: afile
+
+[smtp]
+username: username
+password: password
+server: server
 
 [imap]
 user: ****
