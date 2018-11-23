@@ -18,7 +18,7 @@ from email import policy
 name_value_re = re.compile("[> ]*([a-zA-Z ]+): *(.*)")
 
 def make_reply(config,msgdir):
-    reply = open(config['DEFAULT']['msg_file']).read()
+    reply = open(config['DEFAULT']['msg_file'], mode='r', encoding='utf-8').read()
     for (key,value) in msgdir.items():
         if opts.debug: print("make_reply: key={}  value={}".format(key,value))
         reply=reply.replace("%"+key+"%",value)
@@ -44,7 +44,7 @@ def HTML_fix(msg):
     print("HTML:",msg)
     return msg
 
-def process(config=None,msg=None,csv_file=None):
+def process(*,config=None,msg=None,csv_file=None):
     """Process an autoresponder request. If it can be processed, send out the message and reply True."""
 
     csv_file  = config['DEFAULT']['csv_file']
@@ -52,14 +52,22 @@ def process(config=None,msg=None,csv_file=None):
 
     payload = msg.get_body(preferencelist=('plain','html')).get_payload()
     payload = HTML_fix(payload)         # shouldn't be necessary
+    varcount = 0
     # read the input file and search for the substitution variables
     for line in payload.split("\n"):
         m = name_value_re.search(line)
         if m:
+            varcount += 1
             (key,value) = m.group(1,2)
             key = key.lower()
-            if opts.debug: print("process: key={}  value={}".format(key,value))
+            if opts.debug:
+                print("process: key={}  value={}".format(key,value))
             msgdir[key] = value
+
+    if varcount==0:
+        if opts.debug:
+            print("No variables found in input file; improperly formed message.")
+        return False
 
     # make sure that the email address is actually an email address
     if "email" in msgdir:
@@ -72,7 +80,8 @@ def process(config=None,msg=None,csv_file=None):
     # Now create the substituted message
     reply = make_reply(config,msgdir)
     if "%name%" in reply:
-        print("Did not substitute %name% from reply")
+        if opts.debug:
+            print("Did not substitute %name% from reply")
         return False                    # no message found
 
     # Save the substitution variables into the CSV file
