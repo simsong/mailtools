@@ -14,6 +14,8 @@ username: username
 password: password
 server: mail.server.to.use
 
+Remember: dreamhost only allows 100 messages/hour
+
 """
 
 import re
@@ -34,7 +36,7 @@ USE_SENDMAIL=False
 def sendmail(config,from_addr,to_addrs,msg,debug=False):
     """Send out the message by sendmail"""
     if args.dry_run:
-        print("==== Will not send this message: ====\n{}\n====================\n".format(msg))
+        print("==== Dry run. Not sending mail to "," ".join(to_addrs))
         return False
     if args.debug:
         to = re.findall("to:.*$", msg, re.I|re.M)[0:1][0]
@@ -91,8 +93,7 @@ if __name__=="__main__":
     a.add_argument("--dry-run", help="do not send out email or refile messages", action="store_true")
     a.add_argument("--debug",   help="debug", action="store_true")
     a.add_argument("--addresses", help="input file for addresses")
-    a.add_argument("--delay",   type=float, default=1.0)
-    a.add_argument("inputs",    nargs="*")
+    a.add_argument("--delay",   help="delay between messages. 45 seconds=80 messages per hour; Dreamhost allows a max of 100 messages/hour ", type=float, default=45.0)
     args = a.parse_args()
 
     import configparser
@@ -110,7 +111,7 @@ if __name__=="__main__":
             for line in f:
                 (first,last,email) = line.strip().split(",")
                 params = {'firstname':first, 'to':f'"{first} {last}" <{email}>'}
-                print(params['to'])
+                print(time.asctime(),params['to'])
                 sendmail(config,config['bulkmail']['from'],[email],make_msg(config,params),debug=args.debug)
                 time.sleep(args.delay)
                 
