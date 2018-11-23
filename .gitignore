@@ -77,3 +77,4 @@ sdist/
 target/
 var/
 venv/
+*.msg

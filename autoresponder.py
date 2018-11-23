@@ -15,12 +15,14 @@ import email.parser
 from email.parser import BytesParser
 from email import policy
 
+AUTORESPONDER_SECTION='autoresponder'
+
 name_value_re = re.compile("[> ]*([a-zA-Z ]+): *(.*)")
 
 def make_reply(config,msgdir):
-    reply = open(config['DEFAULT']['msg_file'], mode='r', encoding='utf-8').read()
+    reply = open(config[AUTORESPONDER_SECTION]['msg_file'], mode='r', encoding='utf-8').read()
     for (key,value) in msgdir.items():
-        if opts.debug: print("make_reply: key={}  value={}".format(key,value))
+        if args.debug: print("make_reply: key={}  value={}".format(key,value))
         reply=reply.replace("%"+key+"%",value)
     reply = reply.replace("%from_address%", config['DEFAULT']['from_address'])
     reply = reply.replace("%sender_address%", config['DEFAULT']['from_address'])
@@ -28,10 +30,10 @@ def make_reply(config,msgdir):
     return reply
 
 def sendmail(config,msg):
-    if opts.dry_run:
+    if args.dry_run:
         print("==== Will not send this message: ====\n{}\n====================\n".format(msg))
         return
-    if opts.debug:
+    if args.debug:
         print("Sending mail")
     from subprocess import Popen,PIPE
     p = Popen(['/usr/sbin/sendmail','-t'],stdin=PIPE)
@@ -47,7 +49,7 @@ def HTML_fix(msg):
 def process(*,config=None,msg=None,csv_file=None):
     """Process an autoresponder request. If it can be processed, send out the message and reply True."""
 
-    csv_file  = config['DEFAULT']['csv_file']
+    csv_file  = config[AUTORESPONDER_SECTION]['csv_file']
     msgdir = {}
 
     payload = msg.get_body(preferencelist=('plain','html')).get_payload()
@@ -60,12 +62,12 @@ def process(*,config=None,msg=None,csv_file=None):
             varcount += 1
             (key,value) = m.group(1,2)
             key = key.lower()
-            if opts.debug:
+            if args.debug:
                 print("process: key={}  value={}".format(key,value))
             msgdir[key] = value
 
     if varcount==0:
-        if opts.debug:
+        if args.debug:
             print("No variables found in input file; improperly formed message.")
         return False
 
@@ -80,22 +82,28 @@ def process(*,config=None,msg=None,csv_file=None):
     # Now create the substituted message
     reply = make_reply(config,msgdir)
     if "%name%" in reply:
-        if opts.debug:
+        if args.debug:
             print("Did not substitute %name% from reply")
         return False                    # no message found
 
     # Save the substitution variables into the CSV file
-    with open(config['DEFAULT']['csv_file'],'a') as f:
+    with open(config[AUTORESPONDER_SECTION]['csv_file'],'a') as f:
         if f.tell()==0:
             # print the headers
             print("\t".join(cols), file=f)
         print("\t".join([datetime.date.today().isoformat()] + [msgdir.get(col,"") for col in cols]), file=f)
-    if opts.debug:
+    if args.debug:
         print("process(): repl:\n{}\n".format(reply))
     if reply:
         sendmail(config,reply)
     return True
 
+
+def mailmain(fname):
+    with open(fname,"r") as f:
+        for line in f:
+            (date,name,email,domestic,undergraduates,graduates) = line.split("\t")
+            print("{} <{}>".format(name,email))
 
 if __name__=="__main__":
     import argparse
@@ -107,22 +115,27 @@ if __name__=="__main__":
     a.add_argument("--test",    help="print the form letter with fake data", action="store_true")
     a.add_argument("--dry-run", help="do not send out email or refile messages", action="store_true")
     a.add_argument("--debug",   help="debug", action="store_true")
+    a.add_argument("--mailman",  help="turn the csv file into input for mailman")
     a.add_argument("inputs",    nargs="*")
-    opts = a.parse_args()
+    args = a.parse_args()
 
-    if opts.test:
+    if args.test:
         print(make_msg(config,{"name":"A professor","email":"professor@college.com"}))
         exit(1)
 
-    if not opts.config:
+    if args.mailman:
+        mailname(args.mailman)
+        exit 0
+
+    if not args.config:
         raise RuntimeError("--config must be specified")
 
     import configparser
     config = configparser.ConfigParser()
-    config.read(opts.config)
-    cols      = config['DEFAULT']['keep_cols'].lower().replace(" ","").split(",")
+    config.read(args.config)
+    cols      = config[AUTORESPONDER_SECTION]['keep_cols'].lower().replace(" ","").split(",")
 
-    for i in opts.inputs:
+    for i in args.inputs:
         if os.path.isfile(i):
             msg = BytesParser(policy=policy.default).parse(open(i,'rb'))
             process(config=config,msg=msg)
@@ -130,11 +143,11 @@ if __name__=="__main__":
             for fn in os.listdir(i):
                 path = os.path.join(fn,fname)
                 process(config=config,msg=BytesParser(policy=policy.default).parse(open(path,'rb')))
-    if opts.inputs:
+    if args.inputs:
         exit(0)
 
 
-    if opts.maildir:
+    if args.maildir:
         archive = mailbox.mbox("~/archive.mbox")
         error = mailbox.mbox("~/error.mbox")
         inbox = mailbox.Maildir("~/Maildir")
@@ -146,7 +159,7 @@ if __name__=="__main__":
             replied = process(config=config,msg=BytesParser(policy=policy.default).parsebytes(message.as_bytes()))
 
             # Refile to archive or error and delete incoming message
-            if not opts.dry_run:
+            if not args.dry_run:
                 if replied:
                     print("OK",message['subject'],message['from'])
                     archive.lock()
