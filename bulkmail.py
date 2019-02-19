@@ -34,7 +34,6 @@ import smtplib
 USE_SENDMAIL=False
 
 def sendmail(config,from_addr,to_addrs,msg,debug=False):
-    """Send out the message by sendmail"""
     if args.dry_run:
         print("==== Dry run. Not sending mail to "," ".join(to_addrs))
         return False
@@ -103,7 +102,7 @@ if __name__=="__main__":
     if args.test:
         to_addr = args.test
         params = {'to':to_addr,'firstname':"Simson"}
-        sendmail(config,'simsong@acm.org',[to_addr],make_msg(config,params))
+        sendmail(config,to_addr,[to_addr],make_msg(config,params))
         exit(1)
 
     if args.addresses:

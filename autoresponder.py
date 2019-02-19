@@ -12,51 +12,73 @@ import datetime
 import mailbox
 import email.errors
 import email.parser
+import smtplib
 from email.parser import BytesParser
 from email import policy
 
 AUTORESPONDER_SECTION='autoresponder'
+USE_SENDMAIL=False
 
 name_value_re = re.compile("[> ]*([a-zA-Z ]+): *(.*)")
 
-def make_reply(config,msgdir):
+def make_reply(config,msgdict):
     reply = open(config[AUTORESPONDER_SECTION]['msg_file'], mode='r', encoding='utf-8').read()
-    for (key,value) in msgdir.items():
+    for (key,value) in msgdict.items():
         if args.debug: print("make_reply: key={}  value={}".format(key,value))
         reply=reply.replace("%"+key+"%",value)
-    reply = reply.replace("%from_address%", config['DEFAULT']['from_address'])
-    reply = reply.replace("%sender_address%", config['DEFAULT']['from_address'])
-    reply = reply.replace("%cc_address%", config['DEFAULT']['cc_address'])
+    reply = reply.replace("%from_address%", config['autoresponder']['from_address'])
+    reply = reply.replace("%sender_address%", config['autoresponder']['from_address'])
+    reply = reply.replace("%cc_address%", config['autoresponder']['cc_address'])
     return reply
 
-def sendmail(config,msg):
+def sendmail(*,config,from_addr,to_addrs,msg):
     if args.dry_run:
         print("==== Will not send this message: ====\n{}\n====================\n".format(msg))
         return
     if args.debug:
         print("Sending mail")
-    from subprocess import Popen,PIPE
-    p = Popen(['/usr/sbin/sendmail','-t'],stdin=PIPE)
-    p.communicate(msg.encode('utf-8'))
 
-def HTML_fix(msg):
+    if USE_SENDMAIL:
+        from subprocess import Popen,PIPE
+        p = Popen(['/usr/sbin/sendmail','-t'],stdin=PIPE)
+        p.communicate(msg.encode('utf-8'))
+        return True;
+
+    host = config['smtp']['server']
+    with smtplib.SMTP(host,587) as smtp:
+        if args.debug:
+            smtp.set_debuglevel(1)
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(config['smtp']['username'],config['smtp']['password'])
+        smtp.sendmail(from_addr,to_addrs,msg)
+        print("Send mail to ",to_addrs," from ",from_addr," with SMTP . message length:",len(msg))
+    
+
+def HTML_unquote(msg):
     msg = msg.replace("=20"," ")
     msg = msg.replace("=3D","=")
     msg = msg.replace("&nbsp;"," ")
-    print("HTML:",msg)
     return msg
 
 def process(*,config=None,msg=None,csv_file=None):
     """Process an autoresponder request. If it can be processed, send out the message and reply True."""
 
-    csv_file  = config[AUTORESPONDER_SECTION]['csv_file']
-    msgdir = {}
+    if args.debug:
+        print("======================= process ====================")
 
-    payload = msg.get_body(preferencelist=('plain','html')).get_payload()
-    payload = HTML_fix(payload)         # shouldn't be necessary
+    csv_file  = config[AUTORESPONDER_SECTION]['csv_file']
+    to_addr = None
+    msgdict = {}
+
+    payload = msg.as_string()
+    payload = HTML_unquote(payload)         # shouldn't be necessary
     varcount = 0
     # read the input file and search for the substitution variables
     for line in payload.split("\n"):
+        if "<" in line:                 # easy way to avoid HTML 
+            continue
         m = name_value_re.search(line)
         if m:
             varcount += 1
@@ -64,7 +86,7 @@ def process(*,config=None,msg=None,csv_file=None):
             key = key.lower()
             if args.debug:
                 print("process: key={}  value={}".format(key,value))
-            msgdir[key] = value
+            msgdict[key] = value
 
     if varcount==0:
         if args.debug:
@@ -72,15 +94,15 @@ def process(*,config=None,msg=None,csv_file=None):
         return False
 
     # make sure that the email address is actually an email address
-    if "email" in msgdir:
-        match = re.search(r'[._\-\w]+@[\w.\-_]+', msgdir['email'])
+    if "email" in msgdict:
+        match = re.search(r'[._\-\w]+@[\w.\-_]+', msgdict['email'])
         if match:
-            msgdir['email'] = match.group()
+            msgdict['email'] = to_addr = match.group()
         else:
-            del msgdir['email']
+            del msgdict['email']
 
     # Now create the substituted message
-    reply = make_reply(config,msgdir)
+    reply = make_reply(config,msgdict)
     if "%name%" in reply:
         if args.debug:
             print("Did not substitute %name% from reply")
@@ -91,11 +113,12 @@ def process(*,config=None,msg=None,csv_file=None):
         if f.tell()==0:
             # print the headers
             print("\t".join(cols), file=f)
-        print("\t".join([datetime.date.today().isoformat()] + [msgdir.get(col,"") for col in cols]), file=f)
+        print("\t".join([datetime.date.today().isoformat()] + [msgdict.get(col,"") for col in cols]), file=f)
     if args.debug:
         print("process(): repl:\n{}\n".format(reply))
     if reply:
-        sendmail(config,reply)
+        sendmail(config=config,to_addrs=[to_addr,config['autoresponder']['cc_address']],
+                 from_addr=config['autoresponder']['from_address'],msg=reply)
     return True
 
 
@@ -110,13 +133,14 @@ if __name__=="__main__":
 
     a = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,
                                 description="Recording mail autoresponder")
-    a.add_argument("--maildir", help="Input is root of Maildir", action="store_true", default=os.path.join(os.environ["HOME"],"Maildir"))
+    a.add_argument("--maildir", help="Input is root of Maildir", action="store_true")
+    a.add_argument("--imap",    help="Input is imap as specified in config file", action='store_true')
     a.add_argument("--config",  help="config file with private data")
     a.add_argument("--test",    help="print the form letter with fake data", action="store_true")
+    a.add_argument("--mailtest", help="Send a test mail message to the address provided.")
     a.add_argument("--dry-run", help="do not send out email or refile messages", action="store_true")
     a.add_argument("--debug",   help="debug", action="store_true")
     a.add_argument("--mailman",  help="turn the csv file into input for mailman")
-    a.add_argument("inputs",    nargs="*")
     args = a.parse_args()
 
     if args.test:
@@ -125,7 +149,7 @@ if __name__=="__main__":
 
     if args.mailman:
         mailname(args.mailman)
-        exit 0
+        exit(0)
 
     if not args.config:
         raise RuntimeError("--config must be specified")
@@ -135,28 +159,24 @@ if __name__=="__main__":
     config.read(args.config)
     cols      = config[AUTORESPONDER_SECTION]['keep_cols'].lower().replace(" ","").split(",")
 
-    for i in args.inputs:
-        if os.path.isfile(i):
-            msg = BytesParser(policy=policy.default).parse(open(i,'rb'))
-            process(config=config,msg=msg)
-        if os.path.isdir(i):
-            for fn in os.listdir(i):
-                path = os.path.join(fn,fname)
-                process(config=config,msg=BytesParser(policy=policy.default).parse(open(path,'rb')))
-    if args.inputs:
-        exit(0)
+    if args.mailtest:
+        msgdict = {'name':'test name',
+                   'email':args.mailtest}
+        reply = make_reply(config,msgdict)
+        sendmail(config=config,to_addrs=[args.mailtest],from_addr=config['autoresponder']['from_address'],msg=reply)
+        exit(1)
 
-
+    archive = mailbox.mbox("~/archive.mbox")
+    error = mailbox.mbox("~/error.mbox")
     if args.maildir:
-        archive = mailbox.mbox("~/archive.mbox")
-        error = mailbox.mbox("~/error.mbox")
         inbox = mailbox.Maildir("~/Maildir")
         for key in inbox.iterkeys():
             try:
                 message = inbox[key]
             except email.errors.MessageParseError:
                 continue
-            replied = process(config=config,msg=BytesParser(policy=policy.default).parsebytes(message.as_bytes()))
+            msg = BytesParser(policy=policy.default).parsebytes(message.as_bytes())
+            replied = process(config=config,msg=msg)
 
             # Refile to archive or error and delete incoming message
             if not args.dry_run:
@@ -174,3 +194,41 @@ if __name__=="__main__":
                 inbox.discard(key)
                 inbox.unlock()
 
+    if args.imap:
+        import imaplib,socket
+        try:
+            M = imaplib.IMAP4_SSL(config['imap']['server'])
+        except socket.gaierror:
+            print("Unknown hostname:",config['imap']['server'])
+            exit(1)
+        M.login(config['imap']['username'], config['imap']['password'])
+        M.select()
+        typ, data = M.search(None, 'ALL')
+        for num in data[0].split():
+            typ, d2 = M.fetch(num, '(RFC822)')
+            for val in d2:
+                if type(val)==tuple:
+                    (a,b) = val
+                    num = a.decode('utf-8').split()[0]
+                    msg = BytesParser().parsebytes(b)
+                    replied = process(config=config,msg=msg)
+                    # Refile to archive or error and delete incoming message
+                    if not args.dry_run:
+                        if replied:
+                            archive.lock()
+                            archive.add(msg)
+                            archive.unlock()
+                        else:
+                            error.lock()
+                            error.add(msg)
+                            error.unlock()
+                        M.store(num, '+FLAGS', '\\Deleted')
+        try:
+            M.expunge()
+            M.close()
+            M.logout()
+        except imaplib.IMAP4.     abort as e:
+            #print("IMAP abort")
+            pass
+        
+                    

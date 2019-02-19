@@ -1,5 +1,5 @@
 [autoresponder]
-from: simsong@acm.org
+from: user@host.com
 csv_file: tally.csv
 keep_cols: Name, Email, domestic, undergraduates, gradautes
 
