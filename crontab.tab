@@ -1,0 +1,2 @@
+MAILTO="simsong@acm.org"
+* * * * * python autoresponder.py --config config.ini --imap
