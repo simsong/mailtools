@@ -85,6 +85,20 @@ class HTMLFilter(HTMLParser):
     def handle_data(self, data):
         self.text += data
 
+def get_msg_text(msg):
+    """Return the text of a message, conveting HTML if necessar"""
+
+    #for part in msg.walk():
+    #    print(part.get_content_type())
+    #text =  msg.get_content()
+    # https://docs.python.org/3.7/library/email.message.html#email.message.EmailMessage
+    text = msg.get_body(preferencelist=('plain','html')).get_content()
+    if text.startswith("<html"):
+        f = HTMLFilter()
+        f.feed( text.replace("</div>","</div>\n").replace("<br","\n<br") )
+        return f.text
+    return text
+
 def process_msg(*,config,msg):
     """Process an autoresponder request. If it can be processed, send out the message and reply True."""
 
@@ -95,11 +109,7 @@ def process_msg(*,config,msg):
     csv_file  = config[AUTORESPONDER_SECTION]['csv_file']
     msgvars = {}                            # variables that get substituted in message
 
-    text =  msg.get_content()
-    if text.startswith("<html"):
-        f = HTMLFilter()
-        f.feed( text.replace("</div>","</div>\n").replace("<br","\n<br") )
-        text = f.text
+    text  = get_msg_text(msg)
     lines = text.split("\n")
     if args.debug:
         print("source message:")
