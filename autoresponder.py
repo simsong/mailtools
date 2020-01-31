@@ -68,7 +68,7 @@ def send_message(*,config,from_addr,to_addrs,msg):
         smtp.starttls()
         smtp.ehlo()
         smtp.login(config['smtp']['username'],config['smtp']['password'])
-        smtp.sendmail(from_addr,to_addrs,msg)
+        smtp.sendmail(from_addr,to_addrs,msg.encode('utf8'))
         print("Send mail to ",to_addrs," from ",from_addr," with SMTP . message length:",len(msg))
     
 
@@ -78,8 +78,16 @@ def clean_email(email):
         raise ValueError("no email address found in '{}'".format(email))
     return m.group(1)
 
+# https://stackoverflow.com/questions/14694482/converting-html-to-text-with-python
+from html.parser import HTMLParser
+class HTMLFilter(HTMLParser):
+    text = ""
+    def handle_data(self, data):
+        self.text += data
+
 def process_msg(*,config,msg):
     """Process an autoresponder request. If it can be processed, send out the message and reply True."""
+
 
     if args.debug:
         print("======================= process ====================")
@@ -87,7 +95,12 @@ def process_msg(*,config,msg):
     csv_file  = config[AUTORESPONDER_SECTION]['csv_file']
     msgvars = {}                            # variables that get substituted in message
 
-    lines = quopri.decodestring( msg.as_string() ).decode('utf-8', 'ignore').split("\n")
+    text =  msg.get_content()
+    if text.startswith("<html"):
+        f = HTMLFilter()
+        f.feed( text.replace("</div>","</div>\n").replace("<br","\n<br") )
+        text = f.text
+    lines = text.split("\n")
     if args.debug:
         print("source message:")
         for (ct,line) in enumerate(lines):
@@ -101,28 +114,35 @@ def process_msg(*,config,msg):
             continue
         (key,value) = m.group(1,2)
         key = key.lower()
-        if args.debug:
-            print("process_msg: FOUND VARIABLE {} = {}".format(key,value))
-        if key=='email':
-            msgvars[key] = clean_email(value)
-        else:
-            msgvars[key] = value
+        value = value.strip()
+        if value:
+            if args.debug:
+                print("process_msg: FOUND VARIABLE {} = {}".format(key,value))
+            if key=='email':
+                msgvars[key] = str(clean_email(value))
+            else:
+                msgvars[key] = str(value)
 
     if len(msgvars)==0:
         raise RuntimeError("Could not find substitution variables in input message")
 
     if "email" not in msgvars:
+        print(msg,file=sys.stderr)
+        print("----------------",file=sys.stderr)
+        for (k,v) in msgvars.items():
+            print(f"{k}:{v}",file=sys.stderr)
         raise RuntimeError("input message did not define an email address")
 
     if "name" not in msgvars:
         raise RuntimeError("input message did not define a name")
 
     # Save the substitution variables into the CSV file
-    with open(config[AUTORESPONDER_SECTION]['csv_file'],'a') as f:
+    with open(config[AUTORESPONDER_SECTION]['csv_file'],'a', encoding='utf-8', errors='ignore') as f:
         if f.tell()==0:
             # print the headers
             print("\t".join(cols), file=f)
-        print("\t".join([datetime.date.today().isoformat()] + [msgvars.get(col,"") for col in cols]), file=f)
+        line = "\n".join([datetime.date.today().isoformat()] + [msgvars.get(col,"") for col in cols])
+        f.write(line+"\n")
 
     to_addrs = [msgvars['email'], config['autoresponder']['cc_address']]
     reply = make_reply(config, msgvars)
@@ -182,7 +202,7 @@ def process_imap(config):
             if type(val)==tuple:
                 (a,b) = val
                 num = a.decode('utf-8').split()[0]
-                msg = BytesParser().parsebytes(b)
+                msg = BytesParser(policy=policy.default).parsebytes(b)
                 replied = process_msg(config=config,msg=msg)
                 # Refile to archive or error and delete incoming message
                 if not args.dry_run:
