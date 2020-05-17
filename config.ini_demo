@@ -12,6 +12,6 @@ password: password
 server: server
 
 [imap]
-user: ****
-host: outlook.office365.com
-pass: ****
+username: ****
+password: ****
+server: outlook.office365.com

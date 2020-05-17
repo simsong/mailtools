@@ -78,3 +78,6 @@ target/
 var/
 venv/
 *.msg
+*.ini
+*.eml
+*.mbox
