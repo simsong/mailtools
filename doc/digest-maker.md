@@ -15,7 +15,11 @@ Requirements for a python program that assists in mail processing.
   * Option 1: Save in a file
   * Option 2: Display in a web browser, allowing copy-and-paste into an email system.
   * Option 3: Send to an SMTP server.
-
+  * Option 4:
+    * Create digest in Drafts folder so that the user can just review and then click "SEND" with their ordinary mail client.
+    * Move articles used in the digest to the Archived box.
+    * Move the trash articles (those without the keyword) to the Trash
+    * If there are too many articles, save the rest for next time (future option)
 
 
 ## configuration options
