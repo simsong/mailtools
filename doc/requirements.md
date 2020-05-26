@@ -8,7 +8,7 @@
 * Check email body for suspicuose URL/keywords
 * Identify the time zone and convert it to UTC when needed
 * Identify any abnormility related to the time of the email
-
+* Check attachments against hashsets: [click here](https://www.sleuthkit.org/autopsy/help/hash_db.html)
 
 ## User Interface
 
