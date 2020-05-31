@@ -16,9 +16,12 @@ Requirements for a python program that assists in mail processing.
 * Submissions are sent to an email address with a KEYWORD in the subject line.
 * Moderator runs a sequence of commands on their Macintosh:
   1. `python digest-maker.py --sync`
-  2. emacs table-of-contents.txt
+  2. emacs digest.txt
   3. `python digest-maker.py --send`
 
+* Moderator has two ways to delete messages:
+  1. Open up the inbox in IMAP and just delete them.
+  2. Put the a deleted keyword in the TOC and re-run `--sync`
 
 # Operation
 
@@ -27,13 +30,20 @@ Requirements for a python program that assists in mail processing.
 On Startup with `--sync` option
 1. read the current digest.txt file, and note the order (if it exists)
 2. If the order of the email messages in digest.txt doesn't match the table of contents (TOC) at the top, re-order the messages
-3. Review messages in IMAP INBOX, and download messages that aren't in digest.txt
-4. save digest.txt
+3. Review messages in IMAP INBOX:
+  3a. If any have a delete keyword, move them to the trash mailbox.
+  3b. If any are referenced in the TOC and now have a delete keyword, move them do the trash mailbox.
+  3c. Download messages that aren't in digest.txt and add them to digest.txt (both the TOC and the body)
+4. save digest.txt and digest.json
+   * digest.txt is a file that is ready to be send to the email server (ready to send)
+   * digest.json is a (a single document containing data and metadata for each message)
 
 Notes on digest-making:
 * For each new message, add its Subject: line to the stop of digest.txt, and add body afterwards
 * If (Source) not in subject, scan the body of the message to see if the source can be inferred. (From a URL or keyword of publications.)
 * When messages are added, fix any ISO 8501/Unicode issues according to `charset` settting in config file.
+* Keep headers specified by `headers`: typically Date, From, Subject:
+* Message content: Take the TEXT content if present, otherwise take the HTML content and render as TEXT.
 
 Configuration information required:
 ```
@@ -43,8 +53,15 @@ username:
 password:
 
 [digest]
-; keyword specifies mailmessages to consider in the Inbox
-keyword: KEYWORD
+; keyword specifies Subject keyword for messages to include
+include: KEYWORD
+
+; messages to automatically delete (e.g. from proofpoint)
+delete: KEYWORD1,KEYWORD2,KEYWORD3
+
+; specify headers to keep:
+headers: date,from,subject
+
 ; which character set to use for outgoing mail: should be ASCII or UTF-8. Case insensitive. 
 charset: utf-8
 ; current volume:
@@ -58,33 +75,39 @@ issue: 10
    HTML-based application.
 
 
-## Make-Digest
-On Startup:
-1. Download all messages using IMAP.
-2. Read the table-of-contents
-3. Prepare:
-   * Digest email (ready to send)
-   * Digest JSON (a single document containing data and metadata for message)
-
-Notes on the digest:
-* Have each of the message following, each numbered. Only keep:
-  * Date, From: and Subject: headers
-  * Subject is parsed for (Source) at end in parenthesis
-  * Message content. Take the TEXT content if present, otherwise take the HTML content and render as TEXT.
-  * Be sure to remove Quote Printable!
-
 ## Send-Digest
-On Startup:
+You can manually send the digest, or you can send it automatically with the `--send` option.
+
+On Startup with `--send`, runs all of the send actions in the config files. Options include:
 1. Send email to mailing list
 2. POST JSON to web service and/or send it as an attachment to drop box.
-3. Create an Archive mailbox for the Volume if it doesn't exist
-3. Move messages that were sent from INBOX to Archive mailbox. 
+3. Send to an FTP server.
+4. Log into a remote Unix system and post to Usenet.
+5. Increment the issue number.
 
 Configuration information required:
 ```
-[smtp]
+[smtp1]
 server:
 username:
 password:
+destination:
+
+[ftp1]
+server:
+username:
+password:
+destination: dir/to/destination/NAME.{volume}.{issue}
+
+[https1]
+url: https://host/location
+method: post
+
+
+[send-actions]
+action1: email smtp1
+action2: post https1
+action3: ftp ftp1
+
 ```
 
