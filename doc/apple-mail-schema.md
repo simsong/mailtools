@@ -2,6 +2,9 @@
 
 Here is Apple's mail schema.
 
+
+I generated this dump with SQLite3, and then we cleaned up the formatting to make it more readable.
+
 ```
 (base) simsong@nimi mydata % sqlite3 envelope.sqlite3
 -- Loading resources from /Users/simsong/.sqliterc
@@ -9,7 +12,37 @@ Run Time: real 0.003 user 0.001229 sys 0.000634
 SQLite version 3.31.1 2020-01-27 19:55:54
 Enter ".help" for usage hints.
 sqlite> .schema
-CREATE TABLE messages (ROWID INTEGER PRIMARY KEY AUTOINCREMENT, message_id, document_id BLOB, in_reply_to, remote_id INTEGER, sender INTEGER, subject_prefix, subject INTEGER, date_sent INTEGER, date_received INTEGER, date_created INTEGER, date_last_viewed INTEGER, mailbox INTEGER, remote_mailbox INTEGER, flags INTEGER, read, flagged, size INTEGER, color, type INTEGER, conversation_id INTEGER DEFAULT -1, snippet TEXT DEFAULT NULL, fuzzy_ancestor INTEGER DEFAULT NULL, automated_conversation INTEGER DEFAULT 0, root_status INTEGER DEFAULT -1, conversation_position INTEGER DEFAULT -1, deleted INTEGER DEFAULT 0);
+```
+The `messages` table is a table of the metadata for every message in the mail store.
+
+```
+CREATE TABLE messages (ROWID INTEGER PRIMARY KEY AUTOINCREMENT, 
+                       message_id, 
+                       document_id BLOB, 
+                       in_reply_to, 
+                       remote_id INTEGER, 
+                       sender INTEGER, 
+                       subject_prefix, 
+                       subject INTEGER, 
+                       date_sent INTEGER, 
+                       date_received INTEGER, 
+                       date_created INTEGER, 
+                       date_last_viewed INTEGER,
+                       mailbox INTEGER, 
+                       remote_mailbox INTEGER, 
+                       flags INTEGER, 
+                       read, 
+                       flagged, 
+                       size INTEGER, 
+                       color,
+                       type INTEGER, 
+                       conversation_id INTEGER DEFAULT -1, 
+                       snippet TEXT DEFAULT NULL, 
+                       fuzzy_ancestor INTEGER DEFAULT NULL, 
+                       automated_conversation INTEGER DEFAULT 0, 
+                       root_status INTEGER DEFAULT -1, 
+                       conversation_position INTEGER DEFAULT -1, 
+                       deleted INTEGER DEFAULT 0);
 CREATE TABLE sqlite_sequence(name,seq);
 CREATE TABLE subjects (ROWID INTEGER PRIMARY KEY, subject COLLATE RTRIM, normalized_subject COLLATE RTRIM);
 CREATE TABLE addresses (ROWID INTEGER PRIMARY KEY, address COLLATE NOCASE, comment, UNIQUE(address, comment));
