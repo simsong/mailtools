@@ -16,7 +16,6 @@ sqlite> .schema
 The `messages` table is a table of the metadata for every message in the mail store.
 
 ```
---WARNING! ERRORS ENCOUNTERED DURING SQL PARSING!
 CREATE TABLE messages (
 	ROWID INTEGER PRIMARY KEY AUTOINCREMENT,
 	message_id,
