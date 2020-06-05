@@ -8,6 +8,9 @@ import re
 import csv
 import logging
 import mailbox
+import sys
+
+assert sys.version>'3.0.0'
 
 
 def process_mailbox(M, cb):
