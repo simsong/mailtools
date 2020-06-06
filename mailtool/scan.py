@@ -1,4 +1,3 @@
-#@@ -0,0 +1,46 @@
 #!/usr/bin/python
 #
 # Scan mail and print things about it.
@@ -9,30 +8,30 @@ import re
 import csv
 import logging
 import mailbox
+import sys
+
+assert sys.version>'3.0.0'
 
 
-def process_mailbox(M):#made a change here, removed extra cb variable
+def process_mailbox(M, cb):
     for message in M:
-        message_printer(message)
+        cb(message)
+    
 
-
-def process_file(path):#removed variable cb
+def process_file(path, cb):
     if path.endswith(".mbox"):
         mails = mailbox.mbox( path )
-        process_mailbox(mails)
-    #else:
-    #    raise RuntimeError("Don't know how to process "+path)
-    #commented out the else part since I stored the mbox file with some other files
-
+        process_mailbox(mails, cb)
+#    else:
+#        raise RuntimeError("Don't know how to process "+path)
+    
 def scan_directory(dirname, cb):
     """Right now we hard-code mbox"""
     logging.error("scan_directory(%s)",dirname)
-    
     for (dirpath, dirnames, filenames) in os.walk(dirname):
         print(dirname)
         for fname in filenames:
-            print(fname)
-            process_file( os.path.join(dirpath, fname))
+            process_file( os.path.join(dirpath, fname),cb)
 
 def message_printer(message):
     print("{:20s} {:30s} {:40s}".format(message['date'],message['from'],message['subject']))
