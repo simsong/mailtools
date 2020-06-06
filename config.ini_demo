@@ -11,6 +11,8 @@ username: username
 password: password
 server: server
 
+# You will need to generate an application-specific password if you are using Google.
+# See: https://myaccount.google.com/apppasswords
 [imap]
 username: ****
 password: ****

@@ -17,13 +17,12 @@ def process_mailbox(M, cb):
     for message in M:
         cb(message)
     
-
 def process_file(path, cb):
     if path.endswith(".mbox"):
         mails = mailbox.mbox( path )
         process_mailbox(mails, cb)
     else:
-        raise RuntimeError("Don't know how to process "+path)
+        logging.error("Don't know how to process "+path)
     
 def scan_directory(dirname, cb):
     """Right now we hard-code mbox"""

@@ -1,50 +1,34 @@
-#!/usr/bin/python
 
-import getpass
-import imaplib
-imaplib._MAXLINE = 10000000
-import email
-import re
-import mailbox
+def get_mailbox(M, mailbox_name):
+    """Given an IMAP connection M, select mailbox `name` and return M."""
 
+def process_mailbox(M, cb):
+    """Call the callback cb for each message in the selected mailbox"""
+        try:
+            (t, r) = M.status(f'"{mailbox_name}"',"(MESSAGES RECENT UIDNEXT UIDVALIDITY UNSEEN)")
+            r = r[0].decode('utf-8')
+            if r[0]=='"':
+                m = re.search('"(.*)" (.*)',r)
+                flags = m.group(2)
+            else:
+                flags = r.split(" ",maxsplit=1)[1]
+            print("{:20}: {}".format(mailbox_name,flags))
+        except imaplib.IMAP4.error as e:
+            r = e
+    print("")
+    
 
-list_response_pattern = re.compile(
-    r'\((?P<flags>.*?)\) "(?P<delimiter>.*)" (?P<name>.*)'
-)
+class MessageLister(AbstractMailboxAction):
+    def process_message(self, message):
 
-
-def parse_list_response(line):
-    match = list_response_pattern.match(line.decode('utf-8'))
-    flags, delimiter, mailbox_name = match.groups()
-    mailbox_name = mailbox_name.strip('"')
-    return (flags, delimiter, mailbox_name)
-
-
-def login(args,config):
-    host = config["imap"]["server"]
-    user = config["imap"]["username"]
-    print("host: ",host)
-    print("user: ",user)
-
-    try:
-        pw = config["imap"]["pass"]
-    except KeyError:
-        pw = getpass.getpass()
-
-    #M = imaplib.IMAP4(host)
-    #M.starttls()
-    M = imaplib.IMAP4_SSL(host)
-    M.login(user, pw)
-    return M
-
-def recursive_explore(args, config):
-    M = login(args,config)
+        
+def recursive_explore(M, find_dups=False):
+    """Explores all mailboxes"""
     print("mailboxes:")
     (typ, res) = M.list()
     if typ!="OK":
-        print("Cannot list mailboxes: {} {}".format(typ,res))
-        exit(1)
-
+        logging.error("Cannot list mailboxes: {} {}".format(typ,res))
+        raise RuntimeError("Cannot list mailboxes")
     print("RES:",res)
     for _ in res:
         (flags, delimiter, mailbox_name) = parse_list_response( _ )
@@ -61,7 +45,7 @@ def recursive_explore(args, config):
             r = e
     print("")
 
-    if args.dups:
+    if find_dups:
         seen = set()
         seen_count = 0
         for mailbox_name in ['[Gmail]/Sent Mail']:
@@ -81,7 +65,10 @@ def recursive_explore(args, config):
                         seen.add( email_header['message-id'] )
         print("Seen count: ",seen_count)
 
+
     """
+    We should do something with this:
+
     print("Inbox:")
     M.select()
     (typ, res) = M.search(None, 'ALL')
@@ -92,10 +79,8 @@ def recursive_explore(args, config):
     """
         
         
-def download(args,config,mailbox_name):
-    M = login(args,config)
+def list_and_download(M, mailbox_name=None):
     M.select(mailbox_name)
-
     typ, res = M.search(None, 'ALL')
     if typ!="OK":
         print(res)
@@ -109,28 +94,24 @@ def download(args,config,mailbox_name):
         flags = data[1]
         flags2 = imaplib.ParseFlags(flags)
         msg = email.message_from_bytes(data[0][1])
-        print("Message %s flags=%s %s / %s / %s " % (num,flags,msg.get('Message-Id').strip(),msg.get('Date'),msg.get('Subject')))
+        print("Download Message %s flags=%s %s / %s / %s " %
+              (num,flags,msg.get('Message-Id').strip(),msg.get('Date'),msg.get('Subject')))
     M.close()
     M.logout()
 
-if __name__ == "__main__":
-    import argparse
-
-    a = argparse.ArgumentParser()
-    a.add_argument("--config", help="Specify config file", default="config.ini")
-    a.add_argument("--stats", help="print stats about the IMAP directory", action="store_true")
-    a.add_argument("--download", help="Download a mailbox")
-    a.add_argument("--dups", help="Find dups", action='store_true')
-    args = a.parse_args()
+    #parser.add_argument("--stats", help="print stats about the IMAP directory", action="store_true")
+    #parser.add_argument("--download", help="Download a named mailbox to mailbox.mbox. TODO: Suppress Dups.")
+    #parser.add_argument("--list", help="list files in the named mailbox")
+    #parser.add_argument("--upload", help="Upload a mbox to the imap server. TODO: Suppress Dups.")
+    #parser.add_argument("--dups", help="Find dups", action='store_true')
 
 
-    import configparser
-    config = configparser.ConfigParser()
-    config.read(args.config)
+    #if args.dups:
+    #    process_all_mailboxes(M, message_find_dups())
+    #
+    #if args.download:
+    #    process_mailbox( get_mailbox(M, args.download), message_downloader(args.download+".mbox"))
+    #
+    #if args.upload:
+    #    process_mailbox( get_mailbox(M, args.download), message_uploader(args.upload+".mbox"))
 
-
-    if args.stats or args.dups:
-        recursive_explore(args, config)
-
-    if args.download:
-        download(args,config,args.download)
