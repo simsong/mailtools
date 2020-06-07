@@ -29,7 +29,7 @@ Mail header processing:
 * Identify any abnormility related to the time of the email
 
 ### Content Analysis
-* Identify Threats: `Threats in Email Communication` in this [PDF](https://www.researchgate.net/profile/Gurpal_Chhabra/publication/286053691_Review_of_E-mail_System_Security_Protocols_and_Email_Forensics/links/5665afcd08ae418a786f1f7d/Review-of-E-mail-System-Security-Protocols-and-Email-Forensics.pdf)
+* Identify Threats: [Threats in Email Communication]https://www.researchgate.net/profile/Gurpal_Chhabra/publication/286053691_Review_of_E-mail_System_Security_Protocols_and_Email_Forensics/links/5665afcd08ae418a786f1f7d/Review-of-E-mail-System-Security-Protocols-and-Email-Forensics.pdf)
 * Check email body for suspicuose URL/keywords
 
 ### Correlation
