@@ -151,8 +151,6 @@ def process_msg(*,config,msg):
                      to_addrs = to_addrs,
                      msg=reply)
 
-
-
 def process_maildir(config):
     inbox = mailbox.Maildir("~/Maildir")
     for key in inbox.iterkeys():

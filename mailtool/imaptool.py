@@ -92,6 +92,7 @@ if __name__ == "__main__":
     parser.add_argument("--list_folders", help="list all of the folders on the server", action='store_true')
     parser.add_argument("--status_folders", help="Print status information about each folder", action='store_true')
     parser.add_argument("--list",  help="List messages in a specified mailbox. Specify INBOX for inbox")
+    parser.add_argument("--download", help="Download the provided MBOX into MBOX.mbox. TODO: don't download the same message more than once.")
 
     args = parser.parse_args()
 
@@ -112,12 +113,35 @@ if __name__ == "__main__":
             except imapclient.exceptions.IMAPClientError as e:
                 print(e)
 
+    # List the messages in a mailbox. This gets all of the messages first.
+    # Ideally we would have a database and just get the new messages
     if args.list:
         select_info = server.select_folder(args.list)
         messages = server.search(['ALL']) # get all messages
         for msgid, data in server.fetch(messages,['UID','ENVELOPE']).items():
             envelope = data[b'ENVELOPE']
-            print(f"{msgid} {envelope.from_[0]} {envelope.date}")
-
-    
+            from_ = (envelope.from_[0] if envelope.from_ else "<no from>")
+            print(f"{msgid} {from_} {envelope.date}")
                 
+
+    # Right now, this downloads all of the messages. A more efficient method would be to download
+    # just the messages with a given message-id and only copy over the messages for which the message-id
+    # is not in the mail file. However, that would not handle the case where two messages have the
+    # same message-ID, which can happen if a person is a recepient of a mail message, and they are also on a mailing list
+    # that is a recepient of the same message.
+    if args.download:
+        mbox = mailbox.mbox(args.download+".mbox")
+        select_info = server.select_folder(args.download)
+        messages = server.search(['ALL']) # get all messages
+        print("messages:",messages)
+        for message in messages:
+            for msgid, data in server.fetch([message],['RFC822']).items():
+                msg  = email.message_from_bytes(data[b'RFC822'])
+                print("Downloaded",msg['Subject'])
+                mbox.lock()
+                mbox.add(msg)
+                mbox.unlock()
+                
+            
+        
+    
