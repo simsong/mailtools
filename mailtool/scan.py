@@ -16,7 +16,6 @@ class MailStats:
         self.senders  = defaultdict(int)
         self.subjects = defaultdict(int)
         self.receivers = defaultdict(int)
-        self.a = 1
 
     def printTopN(self, title, statobj, N):
         print(f"{title}:")
@@ -51,7 +50,6 @@ class MailStats:
     def report(self):
         self.printTopN('Receivers',self.receivers,10)
         self.printTopN('Senders',self.senders,10)
-        print(self.a)
         self.printTopN('Subjects',self.subjects,10)
         
 
