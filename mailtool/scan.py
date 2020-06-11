@@ -1,8 +1,3 @@
-#!/usr/bin/python
-#
-# Scan mail and print things about it.
-# To demonstrate our initial efforts
-
 import os
 import re
 import csv
@@ -11,6 +6,8 @@ import mailbox
 import sys
 
 from collections import defaultdict
+
+from email.header import Header
 
 assert sys.version>'3.0.0'
 
@@ -31,14 +28,24 @@ class MailStats:
             
 
     def process_message(self,msg):
+
         if 'To' in msg:
             self.receivers[ msg['To']] += 1
+
         if 'Cc' in msg:
             self.receivers[ msg['Cc']] += 1
+
         if 'From' in msg:
-            self.senders[ msg['To']] += 1            
-        if 'Subject' in msg:
-            self.subjects[ msg['Subject']] += 1
+            try:
+                self.senders[ msg['From']] += 1 
+            except:
+                self.senders[msg['From'].__str__()]+=1           
+   
+        if 'subject' in msg:
+            try:    
+                self.subjects[ msg['subject']] += 1
+            except:
+                self.subjects[msg['subject'].__str__()]+=1
 
     def report(self):
         self.printTopN('Receivers',self.receivers,10)
@@ -66,7 +73,25 @@ def scan_directory(dirname, cb):
             process_file( os.path.join(dirpath, fname), cb)
 
 def message_printer(message):
-    print("{:20s} {:30s} {:40s}".format(message['date'],message['from'],message['subject']))
+    if message['date'] == None:
+        date = "No date"
+    else:
+        date = message['date']
+
+    if message['from'] == None:
+        From = "No From"
+    else:
+        From = message['from']
+
+    if message['subject'] == None:
+        subject = "No Subject"
+    else:
+        subject = message['subject']    
+
+    print(date)
+    print(From)
+    print(subject)
+    print("\n")
 
 if __name__=="__main__":
     import argparse, resource
