@@ -6,13 +6,17 @@ import mailbox
 import sys
 
 from collections import defaultdict
-
 from email.header import Header
 
 assert sys.version>'3.0.0'
 
-class MailStats:
-    def __init__(self):
+from albert.AbstractAlbertProcessor import AbstractAlbertProcessor
+from albert.Albert import Albert
+
+
+class SimpleMailStats(AbstractAlbertProcessor):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.senders  = defaultdict(int)
         self.subjects = defaultdict(int)
         self.receivers = defaultdict(int)
@@ -26,9 +30,7 @@ class MailStats:
                 break
         print("")
             
-
     def process_message(self,msg):
-
         if 'To' in msg:
             self.receivers[ msg['To']] += 1
 
@@ -52,57 +54,40 @@ class MailStats:
         self.printTopN('Senders',self.senders,10)
         self.printTopN('Subjects',self.subjects,10)
         
+    def print_message(self,message):
+        if message['date'] == None:
+            date = "No date"
+        else:
+            date = message['date']
 
-def process_mailbox(M, cb):
-    for message in M:
-        cb(message)
-    
-def process_file(path, cb):
-    if path.endswith(".mbox"):
-        mails = mailbox.mbox( path )
-        process_mailbox(mails, cb)
-    else:
-        logging.error("Don't know how to process "+path)
-    
-def scan_directory(dirname, cb):
-    """Right now we hard-code mbox"""
-    logging.error("scan_directory(%s)",dirname)
-    for (dirpath, dirnames, filenames) in os.walk(dirname):
-        print(dirname)
-        for fname in filenames:
-            process_file( os.path.join(dirpath, fname), cb)
+        if message['from'] == None:
+            From = "No From"
+        else:
+            From = message['from']
 
-def message_printer(message):
-    if message['date'] == None:
-        date = "No date"
-    else:
-        date = message['date']
+        if message['subject'] == None:
+            subject = "No Subject"
+        else:
+            subject = message['subject']    
 
-    if message['from'] == None:
-        From = "No From"
-    else:
-        From = message['from']
+        print(date)
+        print(From)
+        print(subject)
+        print("\n")
 
-    if message['subject'] == None:
-        subject = "No Subject"
-    else:
-        subject = message['subject']    
-
-    print(date)
-    print(From)
-    print(subject)
-    print("\n")
 
 if __name__=="__main__":
     import argparse, resource
-    parser = argparse.ArgumentParser(description='Extract specified variables from AHS files.',
+    parser = argparse.ArgumentParser(description='Demo program that uses albert to scan a mailbox and print stats',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("path", nargs="*", help="Files or Directories")
+    parser.add_argument("path", nargs="*", help="Files or Directories to scan")
     args = parser.parse_args()
-    ms = MailStats()
-    for name in args.path:
-        if os.path.isdir(name):
-            scan_directory(name, ms.process_message)
-        else:
-            process_file(name, ms.process_message)
-    ms.report()
+    sms  = SimpleMailStats()
+
+    # Get a scanner
+
+    alb = Albert(sms)  # get a scanner with the specified callback
+    for p in args.path:
+        alb.scan(p)             # scan
+
+    sms.report()

@@ -1,3 +1,9 @@
+#
+# All of the mailtools are designed to work with a configuration file.
+# Below is a sample configuration file which has sections for all of our tools.
+# 
+
+
 [autoresponder]
 from: user@host.com
 csv_file: tally.csv
