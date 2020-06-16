@@ -6,7 +6,6 @@ import mailbox
 import sys
 
 from collections import defaultdict
-from email.header import Header
 
 assert sys.version>'3.0.0'
 

@@ -41,7 +41,7 @@ if __name__=="__main__":
                                 description="IMAP mail copy program")
     parser.add_argument("--config",  help="config file with private data", default='config.ini')
     g = parser.add_mutually_exclusive_group()
-    g.add_argument("--list", action='store_true', help='list in the impa inbox')
+    g.add_argument("--list", action='store_true', help='list in the imap inbox')
     g.add_argument("--download", help='download the messages into a new mbox')
     g.add_argument("--upload", help='upload the messages in the inbox')
     args = parser.parse_args()

@@ -130,7 +130,8 @@ if __name__ == "__main__":
     # same message-ID, which can happen if a person is a recepient of a mail message, and they are also on a mailing list
     # that is a recepient of the same message.
     if args.download:
-        mbox = mailbox.mbox(args.download+".mbox")
+        mbox_fname = args.download.replace("/","_")+".mbox"
+        mbox = mailbox.mbox( mbox_fname )
         select_info = server.select_folder(args.download)
         messages = server.search(['ALL']) # get all messages
         print("messages:",messages)
