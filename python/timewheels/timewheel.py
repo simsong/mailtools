@@ -20,19 +20,27 @@ import matplotlib.pyplot as plt
 import datetime
 
 # Constants
-RADIUS='radius'
-DIVISION='division'
+NAME='name'
+RADIUS_FUNC='radius'
+DIVISION_FUNC='division'
 RING_COUNT='ring_count'
 DIVISION_COUNT='division_count'
 
 
 
 # Demo code to get things started
-TIMEWHEEL_SPEC1 = {RADIUS:  lambda d:d.weekday(),
+# This works with both timewheels and timerectanges
+TIMEGRAPH_SPEC1 = {NAME:"day of week by hour",
+                   RADIUS_FUNC:  lambda d:d.weekday(),
                    RING_COUNT: 7,
-                   DIVISION: lambda d:d.hour,
+                   DIVISION_FUNC: lambda d:d.hour,
                    DIVISION_COUNT: 24}
 
+TIMEGRAPH_SPEC2 = {NAME:"Day of month by hour",
+                   RADIUS_FUNC:  lambda d:d.day,
+                   RING_COUNT: 7,
+                   DIVISION_FUNC: lambda d:d.hour,
+                   DIVISION_COUNT: 24}
 
 # https://matplotlib.org/gallery/color/named_colors.html
 import matplotlib.pyplot as plt
@@ -63,6 +71,9 @@ We want the following:
     * description of the time wheel to create
   output:
     * time wheel graph.
+
+NOTE: The extraction functions should work for time rectangles in addition to time wheels.
+
 """
    
 COLORS=mcolors.TABLEAU_COLORS
