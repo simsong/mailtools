@@ -16,7 +16,7 @@ class Albert:
             mails = mailbox.mbox( filename )
             self.process_mailbox(mails)
         else:
-            logging.error("Don't know how to process "+path)
+            logging.error("Don't know how to process "+filename)
 
     def scan_directory(self, dirname):
         """Right now we hard-code mbox"""
