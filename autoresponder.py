@@ -85,66 +85,64 @@ class HTMLFilter(HTMLParser):
     def handle_data(self, data):
         self.text += data
 
-def get_msg_text(msg):
-    """Return the text of a message, conveting HTML if necessar"""
-
-    #for part in msg.walk():
-    #    print(part.get_content_type())
-    #text =  msg.get_content()
-    # https://docs.python.org/3.7/library/email.message.html#email.message.EmailMessage
-    text = msg.get_body(preferencelist=('plain','html')).get_content()
-    if text.startswith("<html"):
-        f = HTMLFilter()
-        f.feed( text.replace("</div>","</div>\n").replace("<br","\n<br") )
-        return f.text
-    return text
-
 def process_msg(*,config,msg):
     """Process an autoresponder request. If it can be processed, send out the message and reply True."""
 
 
     if args.debug:
         print("======================= process ====================")
+        print(msg)
 
     csv_file  = config[AUTORESPONDER_SECTION]['csv_file']
     msgvars = {}                            # variables that get substituted in message
 
-    text  = get_msg_text(msg)
-    lines = text.split("\n")
-    if args.debug:
-        print("source message:")
-        for (ct,line) in enumerate(lines):
-            print(ct,line)
-        print("------------------------------------------------")
-
-    # read the input file and search for the substitution variables
-    for line in lines:
-        m = name_value_re.search(line)
-        if not m:
+    for part in msg.walk():
+        if part.get_content_maintype() == 'multipart':
             continue
-        (key,value) = m.group(1,2)
-        key = key.lower()
-        value = value.strip()
-        if value:
-            if args.debug:
-                print("process_msg: FOUND VARIABLE {} = {}".format(key,value))
-            if key=='email':
-                msgvars[key] = str(clean_email(value))
-            else:
-                msgvars[key] = str(value)
+        text = part.get_body(preferencelist=('plain','html')).get_content()
+        if text.startswith('<html'):
+            f = HTMLFilter()
+            f.feed( text.replace("</div>","</div>\n").replace("<br","\n<br") )
+            text = f.text
+        lines = text.split("\n")
+        if args.debug:
+            print("source message:")
+            for (ct,line) in enumerate(lines):
+                print(ct,line)
+            print("------------------------------------------------")
 
-    if len(msgvars)==0:
-        raise RuntimeError("Could not find substitution variables in input message")
+        # read the input file and search for the substitution variables
+        for line in lines:
+            m = name_value_re.search(line)
+            if not m:
+                continue
+            (key,value) = m.group(1,2)
+            key = key.lower()
+            value = value.strip()
+            if value:
+                if args.debug:
+                    print("process_msg: FOUND VARIABLE {} = {}".format(key,value))
+                if key=='email':
+                    msgvars[key] = str(clean_email(value))
+                else:
+                    msgvars[key] = str(value)
 
     if "email" not in msgvars:
-        print(msg,file=sys.stderr)
+        print("msg:",msg,file=sys.stderr)
+        print(type(msg))
+        for part in msg.walk():
+            print("part",part)
+        print('----------------',file=sys.stderr)
+        for (ct,line) in enumerate(lines):
+            print(f"{ct}: {line}",file=sys.stderr)
         print("----------------",file=sys.stderr)
+        print("msgvars:")
         for (k,v) in msgvars.items():
-            print(f"{k}:{v}",file=sys.stderr)
-        raise RuntimeError("input message did not define an email address")
+            print(f"msgvars[{k}] = {v}",file=sys.stderr)
+        return False
 
     if "name" not in msgvars:
-        raise RuntimeError("input message did not define a name")
+        return False
 
     # Save the substitution variables into the CSV file
     with open(config[AUTORESPONDER_SECTION]['csv_file'],'a', encoding='utf-8', errors='ignore') as f:
@@ -160,8 +158,8 @@ def process_msg(*,config,msg):
                      from_addr=config['autoresponder']['from_address'],
                      to_addrs = to_addrs,
                      msg=reply)
-
-
+    return True
+    
 
 def process_maildir(config):
     inbox = mailbox.Maildir("~/Maildir")
