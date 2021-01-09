@@ -1,5 +1,15 @@
-# Mail Statistics
-Right now, this git repository is where Simson is throwing lots of code that has been developed to process email
+# Mail Tools
+Right now, this git repository is where we are developing code to
+process and analyze mail.
+
+## What's here?
+* [misc](misc/) -- Miscellaneous tools, including:
+  * The [autoresponder.py](misc/autoresponder.py).
+  * [imaptool.py(misc/imaptool.py) --- for 
+
+# Using with GMAIL
+1. Request an App Password https://support.google.com/mail/answer/185833?hl=en
+2. Access GMAIL through imap.gmail.com https://developers.google.com/gmail/imap/imap-smtp
 
 # Functionality we want
 * Basic retrieval tools:

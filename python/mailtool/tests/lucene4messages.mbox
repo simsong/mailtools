@@ -1,0 +1,333 @@
+From java-user-return-47666-apmail-lucene-java-user-archive=lucene.apache.org@lucene.apache.org Mon Nov 01 08:54:12 2010
+Return-Path: <java-user-return-47666-apmail-lucene-java-user-archive=lucene.apache.org@lucene.apache.org>
+Delivered-To: apmail-lucene-java-user-archive@www.apache.org
+Received: (qmail 20096 invoked from network); 1 Nov 2010 08:54:11 -0000
+Received: from unknown (HELO mail.apache.org) (140.211.11.3)
+  by 140.211.11.9 with SMTP; 1 Nov 2010 08:54:11 -0000
+Received: (qmail 1437 invoked by uid 500); 1 Nov 2010 08:54:40 -0000
+Delivered-To: apmail-lucene-java-user-archive@lucene.apache.org
+Received: (qmail 1318 invoked by uid 500); 1 Nov 2010 08:54:37 -0000
+Mailing-List: contact java-user-help@lucene.apache.org; run by ezmlm
+Precedence: bulk
+List-Help: <mailto:java-user-help@lucene.apache.org>
+List-Unsubscribe: <mailto:java-user-unsubscribe@lucene.apache.org>
+List-Post: <mailto:java-user@lucene.apache.org>
+List-Id: <java-user.lucene.apache.org>
+Reply-To: java-user@lucene.apache.org
+Delivered-To: mailing list java-user@lucene.apache.org
+Received: (qmail 1307 invoked by uid 99); 1 Nov 2010 08:54:36 -0000
+Received: from athena.apache.org (HELO athena.apache.org) (140.211.11.136)
+    by apache.org (qpsmtpd/0.29) with ESMTP; Mon, 01 Nov 2010 08:54:36 +0000
+X-ASF-Spam-Status: No, hits=4.4 required=10.0
+	tests=FREEMAIL_ENVFROM_END_DIGIT,FREEMAIL_FROM,HTML_MESSAGE,RCVD_IN_DNSWL_NONE,SPF_PASS,T_TO_NO_BRKTS_FREEMAIL
+X-Spam-Check-By: apache.org
+Received-SPF: pass (athena.apache.org: domain of i30817@gmail.com designates 209.85.213.48 as permitted sender)
+Received: from [209.85.213.48] (HELO mail-yw0-f48.google.com) (209.85.213.48)
+    by apache.org (qpsmtpd/0.29) with ESMTP; Mon, 01 Nov 2010 08:54:30 +0000
+Received: by ywp4 with SMTP id 4so3487027ywp.35
+        for <java-user@lucene.apache.org>; Mon, 01 Nov 2010 01:54:09 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=gamma;
+        h=domainkey-signature:received:mime-version:received:in-reply-to
+         :references:from:date:message-id:subject:to:content-type;
+        bh=yKg+pdDHo3JI+MEatw3fcHlCCQL5Q5fsO26+YuZtGVc=;
+        b=uLGMml0WA8DuqN5bs1fg6xzNFopQgKhSAHKT/noJz5Fsz8SslR0PpQuUXiDYQsxR0B
+         fp6VkCwAtMrfAX2P6lGDnNNV5hR+C8A1xRWkdbTfKmXLkppudmnh8b2XBNuTSd/nDloL
+         7jcbklLDEh1wz54hRGiWGjGo50uKu7kXlx8So=
+DomainKey-Signature: a=rsa-sha1; c=nofws;
+        d=gmail.com; s=gamma;
+        h=mime-version:in-reply-to:references:from:date:message-id:subject:to
+         :content-type;
+        b=GzWoxltc0uf9+9YE1obId5aGFZlsxB22XKi6nV4yIbKajx19CSc7lEldaGA+RariOV
+         u8cBG9D/o8QD2X9wqvXpVE6NvSLuOZ/G/IXxvsMAKSfAb317uOIRLSi8IWUn6/SMk2p+
+         1Ge5fzSR/86GoeY01ekK62v8nXbnKizzw90rk=
+Received: by 10.91.44.28 with SMTP id w28mr8866835agj.93.1288601649472; Mon,
+ 01 Nov 2010 01:54:09 -0700 (PDT)
+MIME-Version: 1.0
+Received: by 10.90.154.4 with HTTP; Mon, 1 Nov 2010 01:53:49 -0700 (PDT)
+In-Reply-To: <AANLkTinG+Vd-CX-UfCQieCsFdcOV2UTjvBJxpRx4RhWC@mail.gmail.com>
+References: <AANLkTimNc=a_WU1oLg-p-SUunieoiF7QYy4BA7rqN1Qv@mail.gmail.com>
+ <AANLkTi=9Z2L4bWP_KW1GKF7HvcAchkn_hzK0GPZJrEUp@mail.gmail.com>
+ <AANLkTi=FRQh-OYKaK3LEHjLziBkq9A4SYnknt0Eev99i@mail.gmail.com>
+ <AANLkTinmkW9tC0zc9F+aLk_Ht4Y7_rmwJt2iX5D1WHHB@mail.gmail.com> <AANLkTinG+Vd-CX-UfCQieCsFdcOV2UTjvBJxpRx4RhWC@mail.gmail.com>
+From: Paulo Levi <i30817@gmail.com>
+Date: Mon, 1 Nov 2010 08:53:49 +0000
+Message-ID: <AANLkTik8Ys9QYLKFgZ66SywgzEB2dTCQwcf+0DkXcnhK@mail.gmail.com>
+Subject: Re: Indexing with foreign key
+To: java-user@lucene.apache.org
+Content-Type: multipart/alternative; boundary=0016363b7c1a92ea260493f9f325
+Status: R
+
+--0016363b7c1a92ea260493f9f325
+Content-Type: text/plain; charset=ISO-8859-1
+
+Just self imposed.
+
+--0016363b7c1a92ea260493f9f325--
+
+From java-user-return-47667-apmail-lucene-java-user-archive=lucene.apache.org@lucene.apache.org Mon Nov 01 17:32:40 2010
+Return-Path: <java-user-return-47667-apmail-lucene-java-user-archive=lucene.apache.org@lucene.apache.org>
+Delivered-To: apmail-lucene-java-user-archive@www.apache.org
+Received: (qmail 80452 invoked from network); 1 Nov 2010 17:32:40 -0000
+Received: from unknown (HELO mail.apache.org) (140.211.11.3)
+  by 140.211.11.9 with SMTP; 1 Nov 2010 17:32:40 -0000
+Received: (qmail 72729 invoked by uid 500); 1 Nov 2010 17:33:09 -0000
+Delivered-To: apmail-lucene-java-user-archive@lucene.apache.org
+Received: (qmail 72669 invoked by uid 500); 1 Nov 2010 17:33:08 -0000
+Mailing-List: contact java-user-help@lucene.apache.org; run by ezmlm
+Precedence: bulk
+List-Help: <mailto:java-user-help@lucene.apache.org>
+List-Unsubscribe: <mailto:java-user-unsubscribe@lucene.apache.org>
+List-Post: <mailto:java-user@lucene.apache.org>
+List-Id: <java-user.lucene.apache.org>
+Reply-To: java-user@lucene.apache.org
+Delivered-To: mailing list java-user@lucene.apache.org
+Received: (qmail 72661 invoked by uid 99); 1 Nov 2010 17:33:08 -0000
+Received: from athena.apache.org (HELO athena.apache.org) (140.211.11.136)
+    by apache.org (qpsmtpd/0.29) with ESMTP; Mon, 01 Nov 2010 17:33:08 +0000
+X-ASF-Spam-Status: No, hits=2.2 required=10.0
+	tests=FREEMAIL_FROM,HTML_MESSAGE,RCVD_IN_DNSWL_NONE,SPF_PASS
+X-Spam-Check-By: apache.org
+Received-SPF: pass (athena.apache.org: domain of francisco.borges@gmail.com designates 209.85.213.176 as permitted sender)
+Received: from [209.85.213.176] (HELO mail-yx0-f176.google.com) (209.85.213.176)
+    by apache.org (qpsmtpd/0.29) with ESMTP; Mon, 01 Nov 2010 17:33:02 +0000
+Received: by yxn22 with SMTP id 22so3880110yxn.35
+        for <java-user@lucene.apache.org>; Mon, 01 Nov 2010 10:32:41 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=gamma;
+        h=domainkey-signature:received:mime-version:received:from:date
+         :message-id:subject:to:content-type;
+        bh=Z+EDuTdd5SubKwKeX+D6cnUnqrkKTOZQboZ9s6XcEQI=;
+        b=iO63RO8+tr/RyAEh1Kc/v3PZ8LzX1b6p5ZcTOmnt091lzMA6JVLSC8d43wFq6DD+xN
+         MJzGE0mprm1ma2dkZyyOVJGSnjMBrxS8g7Sxs8DYWY3uwHa+hz8gHaF3fhs2ngkSi0Rb
+         fmDSDG3IFHjOVPiSESNozLzaFeXEoVSoxob5Y=
+DomainKey-Signature: a=rsa-sha1; c=nofws;
+        d=gmail.com; s=gamma;
+        h=mime-version:from:date:message-id:subject:to:content-type;
+        b=sVobupMRThVjOcWkdRCKizEnbJYbdDDuHi8CjjGUmvSfZ/uDn65XOe+7w0YtTXOAVI
+         nWCfH60Sa8gvBOU/2/TrXYY+nqSKq6KVvIlb0hCrxLoIipDl9vsHlAxzP5nbCmWk0M2L
+         01MtcyjOiiGpcMD+hrnT51kqaCy54sneZIFKc=
+Received: by 10.229.238.193 with SMTP id kt1mr6771906qcb.292.1288632761362;
+ Mon, 01 Nov 2010 10:32:41 -0700 (PDT)
+MIME-Version: 1.0
+Received: by 10.229.96.137 with HTTP; Mon, 1 Nov 2010 10:32:21 -0700 (PDT)
+From: Francisco Borges <francisco.borges@gmail.com>
+Date: Mon, 1 Nov 2010 18:32:21 +0100
+Message-ID: <AANLkTinHCq4jO3uPZoUFc4SymjfCxB41w0oX=dWKxsGy@mail.gmail.com>
+Subject: filtering results per field?
+To: lucene user <java-user@lucene.apache.org>
+Content-Type: multipart/alternative; boundary=001485f9220cfcab7804940131df
+Status: R
+
+--001485f9220cfcab7804940131df
+Content-Type: text/plain; charset=UTF-8
+
+Hello,
+
+I would like to search several fields while applying different Filter's to
+the results of different fields.
+
+Is it possible to (efficiently) filter out results according to which fields
+they are coming from? I've been navigating the code and Javadocs, and
+haven't found any way to do it.
+
+One alternative would be to search for each field (or groups of
+fields) separately. Can anyone comment on the performance impact and
+scalability of searching separately per field?
+
+Kind regards,
+-- 
+Francisco
+
+--001485f9220cfcab7804940131df--
+
+From java-user-return-47668-apmail-lucene-java-user-archive=lucene.apache.org@lucene.apache.org Mon Nov 01 19:00:34 2010
+Return-Path: <java-user-return-47668-apmail-lucene-java-user-archive=lucene.apache.org@lucene.apache.org>
+Delivered-To: apmail-lucene-java-user-archive@www.apache.org
+Received: (qmail 23339 invoked from network); 1 Nov 2010 19:00:33 -0000
+Received: from unknown (HELO mail.apache.org) (140.211.11.3)
+  by 140.211.11.9 with SMTP; 1 Nov 2010 19:00:33 -0000
+Received: (qmail 1521 invoked by uid 500); 1 Nov 2010 19:01:02 -0000
+Delivered-To: apmail-lucene-java-user-archive@lucene.apache.org
+Received: (qmail 1458 invoked by uid 500); 1 Nov 2010 19:01:02 -0000
+Mailing-List: contact java-user-help@lucene.apache.org; run by ezmlm
+Precedence: bulk
+List-Help: <mailto:java-user-help@lucene.apache.org>
+List-Unsubscribe: <mailto:java-user-unsubscribe@lucene.apache.org>
+List-Post: <mailto:java-user@lucene.apache.org>
+List-Id: <java-user.lucene.apache.org>
+Reply-To: java-user@lucene.apache.org
+Delivered-To: mailing list java-user@lucene.apache.org
+Received: (qmail 1450 invoked by uid 99); 1 Nov 2010 19:01:02 -0000
+Received: from nike.apache.org (HELO nike.apache.org) (192.87.106.230)
+    by apache.org (qpsmtpd/0.29) with ESMTP; Mon, 01 Nov 2010 19:01:02 +0000
+X-ASF-Spam-Status: No, hits=4.7 required=10.0
+	tests=FREEMAIL_FROM,FREEMAIL_REPLY,HTML_MESSAGE,RCVD_IN_DNSWL_NONE,SPF_PASS,T_TO_NO_BRKTS_FREEMAIL
+X-Spam-Check-By: apache.org
+Received-SPF: pass (nike.apache.org: domain of erickerickson@gmail.com designates 74.125.83.48 as permitted sender)
+Received: from [74.125.83.48] (HELO mail-gw0-f48.google.com) (74.125.83.48)
+    by apache.org (qpsmtpd/0.29) with ESMTP; Mon, 01 Nov 2010 19:00:54 +0000
+Received: by gwj19 with SMTP id 19so159821gwj.35
+        for <java-user@lucene.apache.org>; Mon, 01 Nov 2010 12:00:33 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=gamma;
+        h=domainkey-signature:mime-version:received:received:in-reply-to
+         :references:date:message-id:subject:from:to:content-type;
+        bh=Aw3UdFWomOjMhpMOQ1oBtCm9F1Ri+oiFPypxF9v9lPE=;
+        b=npE6R1q7fETeaCPfluTNNXJdlv6nXns+WjNTIxUDZyHfjfKmFz33FhesSYhDThHpNk
+         oWxgQnsaXPEgHbmWCE85t+1ytu/JAJd2vfCCZje88K/gUpaomf+XnO3HlRr6kPADY3Br
+         Uo6V0HyHqvbmqn5wYazCT9MPIFhi3LPOxzmRA=
+DomainKey-Signature: a=rsa-sha1; c=nofws;
+        d=gmail.com; s=gamma;
+        h=mime-version:in-reply-to:references:date:message-id:subject:from:to
+         :content-type;
+        b=qwL6q/B4rJfjjKpv3UgnRjAr/gH2vot/DuWJaZPhgglvXzBqyvDJMvgX9tLHATJ4et
+         fa7jWg1bSNHR7FDYsfkdXj0YvthoqMQnadaRO6q0zmh6jSgdfW4/9xscRfY5XD64QK8D
+         eQCH/5Qu+KkNyTMpYmtixD2DmYYbKpl64zTN8=
+MIME-Version: 1.0
+Received: by 10.229.221.131 with SMTP id ic3mr15379785qcb.152.1288638007776;
+ Mon, 01 Nov 2010 12:00:07 -0700 (PDT)
+Received: by 10.229.229.14 with HTTP; Mon, 1 Nov 2010 12:00:07 -0700 (PDT)
+In-Reply-To: <AANLkTinHCq4jO3uPZoUFc4SymjfCxB41w0oX=dWKxsGy@mail.gmail.com>
+References: <AANLkTinHCq4jO3uPZoUFc4SymjfCxB41w0oX=dWKxsGy@mail.gmail.com>
+Date: Mon, 1 Nov 2010 15:00:07 -0400
+Message-ID: <AANLkTinK=XLo5RTUNYcu_MBOp7BfcypLuLA4t3rQ3vyq@mail.gmail.com>
+Subject: Re: filtering results per field?
+From: Erick Erickson <erickerickson@gmail.com>
+To: java-user@lucene.apache.org
+Content-Type: multipart/alternative; boundary=0016362841a4b294370494026a17
+X-Virus-Checked: Checked by ClamAV on apache.org
+Status: R
+
+--0016362841a4b294370494026a17
+Content-Type: text/plain; charset=ISO-8859-1
+
+I'm not quite following here. You can construct filters on any field you
+want,
+and combine them as you choose, then apply the resulting filter to your
+query.
+See TermsFilter for instance. Or, your filter could #be# your query.
+
+If this is gibberish, could you give an example or two showing what you're
+trying to accomplish?
+
+Best
+Erick
+
+On Mon, Nov 1, 2010 at 1:32 PM, Francisco Borges <francisco.borges@gmail.com
+> wrote:
+
+> Hello,
+>
+> I would like to search several fields while applying different Filter's to
+> the results of different fields.
+>
+> Is it possible to (efficiently) filter out results according to which
+> fields
+> they are coming from? I've been navigating the code and Javadocs, and
+> haven't found any way to do it.
+>
+> One alternative would be to search for each field (or groups of
+> fields) separately. Can anyone comment on the performance impact and
+> scalability of searching separately per field?
+>
+> Kind regards,
+> --
+> Francisco
+>
+
+--0016362841a4b294370494026a17--
+
+From java-user-return-47669-apmail-lucene-java-user-archive=lucene.apache.org@lucene.apache.org Mon Nov 01 19:25:55 2010
+Return-Path: <java-user-return-47669-apmail-lucene-java-user-archive=lucene.apache.org@lucene.apache.org>
+Delivered-To: apmail-lucene-java-user-archive@www.apache.org
+Received: (qmail 45603 invoked from network); 1 Nov 2010 19:25:49 -0000
+Received: from unknown (HELO mail.apache.org) (140.211.11.3)
+  by 140.211.11.9 with SMTP; 1 Nov 2010 19:25:49 -0000
+Received: (qmail 42912 invoked by uid 500); 1 Nov 2010 19:26:18 -0000
+Delivered-To: apmail-lucene-java-user-archive@lucene.apache.org
+Received: (qmail 42869 invoked by uid 500); 1 Nov 2010 19:26:18 -0000
+Mailing-List: contact java-user-help@lucene.apache.org; run by ezmlm
+Precedence: bulk
+List-Help: <mailto:java-user-help@lucene.apache.org>
+List-Unsubscribe: <mailto:java-user-unsubscribe@lucene.apache.org>
+List-Post: <mailto:java-user@lucene.apache.org>
+List-Id: <java-user.lucene.apache.org>
+Reply-To: java-user@lucene.apache.org
+Delivered-To: mailing list java-user@lucene.apache.org
+Received: (qmail 42861 invoked by uid 99); 1 Nov 2010 19:26:18 -0000
+Received: from nike.apache.org (HELO nike.apache.org) (192.87.106.230)
+    by apache.org (qpsmtpd/0.29) with ESMTP; Mon, 01 Nov 2010 19:26:18 +0000
+X-ASF-Spam-Status: No, hits=0.0 required=10.0
+	tests=FREEMAIL_FROM,RCVD_IN_DNSWL_NONE,SPF_PASS
+X-Spam-Check-By: apache.org
+Received-SPF: pass (nike.apache.org: domain of iamjabour@gmail.com designates 209.85.213.48 as permitted sender)
+Received: from [209.85.213.48] (HELO mail-yw0-f48.google.com) (209.85.213.48)
+    by apache.org (qpsmtpd/0.29) with ESMTP; Mon, 01 Nov 2010 19:26:10 +0000
+Received: by ywp4 with SMTP id 4so3997283ywp.35
+        for <java-user@lucene.apache.org>; Mon, 01 Nov 2010 12:25:50 -0700 (PDT)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=gamma;
+        h=domainkey-signature:mime-version:received:received:date:message-id
+         :subject:from:to:content-type;
+        bh=ld6guAfBIFybxc9KFAjqpgzZcJUgwmj6YU8gyaqTi/A=;
+        b=rO/g1y3ceBPFdCfgYXsfM0vqlZVJ1Odt8gagNxQ3brVEAKqT8aimrClUE+vmhFDtWv
+         p+sB0Ygti82/Q3Mb8hrD06tsdnITTp9VQfyudFglNFKB6XMiBNCA0VoAdqrcUKxJl/IC
+         y043HqNq1inBs7J6XauIEQaCo0ZknHc5SDKcw=
+DomainKey-Signature: a=rsa-sha1; c=nofws;
+        d=gmail.com; s=gamma;
+        h=mime-version:date:message-id:subject:from:to:content-type;
+        b=JfjFNuyJnV3RjIyeEQcnW+vlhtpVQAXYmr03CiYm2REUsKGHRJ9KPT8IfBuRzNZN8x
+         bJTOOL1ln7No42We1hQTruBC/QYeJv+dc0tOLmaaOkoL5I2myDRNcP8ya8SZJcnEFwlV
+         7AdSKVvxtE2W10LDJPalqtvdsWVz2ESFe6/yY=
+MIME-Version: 1.0
+Received: by 10.42.212.200 with SMTP id gt8mr11873809icb.504.1288639549834;
+ Mon, 01 Nov 2010 12:25:49 -0700 (PDT)
+Received: by 10.42.241.137 with HTTP; Mon, 1 Nov 2010 12:25:49 -0700 (PDT)
+Date: Mon, 1 Nov 2010 17:25:49 -0200
+Message-ID: <AANLkTikUS2CU5U531SXz2wTg7b=orEww9vJ6180pEJQ4@mail.gmail.com>
+Subject: Best way to create a Lucene Index with fields that can be updated
+ frequently, and filtering the results by this field.
+From: Iam Jabour <iamjabour@gmail.com>
+To: lucene-group <java-user@lucene.apache.org>
+Content-Type: text/plain; charset=ISO-8859-1
+X-Virus-Checked: Checked by ClamAV on apache.org
+Status: R
+
+Hi, I use Lucene to index my documents and search. Actually I have
+800k documents indexed in Lucene. Those documents have some fields:
+
+Id: is a Numeric field to index the documents
+
+Name: is a textual field to be stored and analyzed
+
+Description: like name
+
+Availability: is a numeric field to filter results. This field can be
+updated frequently, every day.
+
+My question is: What's the better way to create a filter for availability?
+
+1 - add this information to index and make a lucene filter. With this
+approach I have to update document (remove and add, because lucene
+3.0.2 not have update support) every time the "availability" changes.
+What the cost of reindex?
+
+2 - don't add this information to index, and filter the results with a
+DB select. This approach will do a lot of selects, because I need
+select every id from database to check availability.
+
+3 - Create a separated index with id and availability. I don't know if
+it is a good solution, but I can create a index with static
+information and other with information can be frequently updated. I
+think it is better then update all document, just because some fields
+were updated.
+
+______________
+Iam Jabour
+
+---------------------------------------------------------------------
+To unsubscribe, e-mail: java-user-unsubscribe@lucene.apache.org
+For additional commands, e-mail: java-user-help@lucene.apache.org
+
+

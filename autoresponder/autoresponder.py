@@ -99,10 +99,7 @@ def process_msg(*,config,msg):
     for part in msg.walk():
         if part.get_content_maintype() == 'multipart':
             continue
-        plain = part.get_body(preferencelist=('plain','html'))
-        if plain is None:
-            continue
-        text = plain.get_content()
+        text = part.get_body(preferencelist=('plain','html')).get_content()
         if text.startswith('<html'):
             f = HTMLFilter()
             f.feed( text.replace("</div>","</div>\n").replace("<br","\n<br") )

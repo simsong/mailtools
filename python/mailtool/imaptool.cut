@@ -1,0 +1,117 @@
+
+def get_mailbox(M, mailbox_name):
+    """Given an IMAP connection M, select mailbox `name` and return M."""
+
+def process_mailbox(M, cb):
+    """Call the callback cb for each message in the selected mailbox"""
+        try:
+            (t, r) = M.status(f'"{mailbox_name}"',"(MESSAGES RECENT UIDNEXT UIDVALIDITY UNSEEN)")
+            r = r[0].decode('utf-8')
+            if r[0]=='"':
+                m = re.search('"(.*)" (.*)',r)
+                flags = m.group(2)
+            else:
+                flags = r.split(" ",maxsplit=1)[1]
+            print("{:20}: {}".format(mailbox_name,flags))
+        except imaplib.IMAP4.error as e:
+            r = e
+    print("")
+    
+
+class MessageLister(AbstractMailboxAction):
+    def process_message(self, message):
+
+        
+def recursive_explore(M, find_dups=False):
+    """Explores all mailboxes"""
+    print("mailboxes:")
+    (typ, res) = M.list()
+    if typ!="OK":
+        logging.error("Cannot list mailboxes: {} {}".format(typ,res))
+        raise RuntimeError("Cannot list mailboxes")
+    print("RES:",res)
+    for _ in res:
+        (flags, delimiter, mailbox_name) = parse_list_response( _ )
+        try:
+            (t, r) = M.status(f'"{mailbox_name}"',"(MESSAGES RECENT UIDNEXT UIDVALIDITY UNSEEN)")
+            r = r[0].decode('utf-8')
+            if r[0]=='"':
+                m = re.search('"(.*)" (.*)',r)
+                flags = m.group(2)
+            else:
+                flags = r.split(" ",maxsplit=1)[1]
+            print("{:20}: {}".format(mailbox_name,flags))
+        except imaplib.IMAP4.error as e:
+            r = e
+    print("")
+
+    if find_dups:
+        seen = set()
+        seen_count = 0
+        for mailbox_name in ['[Gmail]/Sent Mail']:
+            M.select(f'"{mailbox_name}"') # must transmit double-quotes!
+            res, data = M.uid('search', None, "ALL") # searches all email and returns uids
+            if res=="OK":
+                messages = data[0].split()
+                print("Total Messages: ",len(messages))
+                for (ct,num) in enumerate(messages):
+                    result, data = M.uid('fetch', num, '(BODY.PEEK[HEADER])')
+                    if result=='OK':
+                        email_header = email.message_from_bytes(data[0][1])
+                        print(ct,num,email_header['Date'], email_header['From'], email_header['message-id'])
+                        if email_header['message-id'] in seen:
+                            seen_count += 1
+                            print(f"*** PREVIOUSLY SEEN ***  count={seen_count}")
+                        seen.add( email_header['message-id'] )
+        print("Seen count: ",seen_count)
+
+
+    """
+    We should do something with this:
+
+    print("Inbox:")
+    M.select()
+    (typ, res) = M.search(None, 'ALL')
+    for num in res[0].split():
+        (typ,data) = M.fetch(num,'(RFC822)')
+        msg = email.message_from_bytes(data[0][1])
+        print(msg.get('Date'),msg.get('Subject'))
+    """
+        
+        
+def list_and_download(M, mailbox_name=None):
+    M.select(mailbox_name)
+    typ, res = M.search(None, 'ALL')
+    if typ!="OK":
+        print(res)
+        exit(1)
+    mbox_copy = mailbox.mbox(mailbox_name+".mbox")
+    for num in res[0].split():
+        ok, date = M.fetch(num, '(INTERNALDATE)')
+        date2 = imaplib.Internaldate2tuple(date[0])
+        ok, data = M.fetch(num, '(RFC822)')
+        content = data[0][1]
+        flags = data[1]
+        flags2 = imaplib.ParseFlags(flags)
+        msg = email.message_from_bytes(data[0][1])
+        print("Download Message %s flags=%s %s / %s / %s " %
+              (num,flags,msg.get('Message-Id').strip(),msg.get('Date'),msg.get('Subject')))
+    M.close()
+    M.logout()
+
+    #parser.add_argument("--stats", help="print stats about the IMAP directory", action="store_true")
+    #parser.add_argument("--download", help="Download a named mailbox to mailbox.mbox. TODO: Suppress Dups.")
+    #parser.add_argument("--list", help="list files in the named mailbox")
+    #parser.add_argument("--upload", help="Upload a mbox to the imap server. TODO: Suppress Dups.")
+    #parser.add_argument("--dups", help="Find dups", action='store_true')
+
+
+    #if args.dups:
+    #    process_all_mailboxes(M, message_find_dups())
+    #
+    #if args.download:
+    #    process_mailbox( get_mailbox(M, args.download), message_downloader(args.download+".mbox"))
+    #
+    #if args.upload:
+    #    process_mailbox( get_mailbox(M, args.download), message_uploader(args.upload+".mbox"))
+

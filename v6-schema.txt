@@ -1,9 +1,15 @@
 CREATE TABLE messages (ROWID INTEGER PRIMARY KEY AUTOINCREMENT, message_id, document_id BLOB, in_reply_to, remote_id INTEGER, sender INTEGER, subject_prefix, subject INTEGER, date_sent INTEGER, date_received INTEGER, date_created INTEGER, date_last_viewed INTEGER, mailbox INTEGER, remote_mailbox INTEGER, flags INTEGER, read, flagged, size INTEGER, color, type INTEGER, conversation_id INTEGER DEFAULT -1, snippet TEXT DEFAULT NULL, fuzzy_ancestor INTEGER DEFAULT NULL, automated_conversation INTEGER DEFAULT 0, root_status INTEGER DEFAULT -1, conversation_position INTEGER DEFAULT -1, deleted INTEGER DEFAULT 0);
+
 CREATE TABLE subjects (ROWID INTEGER PRIMARY KEY, subject COLLATE RTRIM, normalized_subject COLLATE RTRIM);
+
 CREATE TABLE addresses (ROWID INTEGER PRIMARY KEY, address COLLATE NOCASE, comment, UNIQUE(address, comment));
+
 CREATE TABLE recipients (ROWID INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(ROWID) ON DELETE CASCADE, type INTEGER, address_id INTEGER NOT NULL REFERENCES addresses(ROWID) ON DELETE CASCADE, position INTEGER);
+
 CREATE TABLE threads (ROWID INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(ROWID) ON DELETE CASCADE, reference TEXT, is_originator DEFAULT 0);
+
 CREATE TABLE mailboxes (ROWID INTEGER PRIMARY KEY AUTOINCREMENT, url UNIQUE, total_count INTEGER DEFAULT 0, unread_count INTEGER DEFAULT 0, unseen_count INTEGER DEFAULT 0, deleted_count INTEGER DEFAULT 0, unread_count_adjusted_for_duplicates INTEGER DEFAULT 0, change_identifier, source INTEGER, alleged_change_identifier);
+
 CREATE TABLE ews_folders (ROWID INTEGER PRIMARY KEY, folder_id TEXT UNIQUE ON CONFLICT REPLACE, mailbox_id INTEGER NOT NULL UNIQUE ON CONFLICT REPLACE REFERENCES mailboxes(ROWID) ON DELETE CASCADE, sync_state TEXT);
 CREATE TABLE duplicates_unread_count (ROWID INTEGER PRIMARY KEY, message_id TEXT NOT NULL ON CONFLICT IGNORE, mailbox_id INTEGER NOT NULL REFERENCES mailboxes(ROWID) ON DELETE CASCADE, unread_count INTEGER DEFAULT 0, UNIQUE(message_id, mailbox_id));
 CREATE TABLE attachments (ROWID INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(ROWID) ON DELETE CASCADE, name TEXT, UNIQUE(message_id, name));
