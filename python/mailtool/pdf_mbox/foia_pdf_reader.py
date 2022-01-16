@@ -33,6 +33,8 @@ https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/automatically-
 
 """
 
+import fitz
+
 
 # https://pdfreader.readthedocs.io/en/latest/index.html
 def is_mailto(lnk):
@@ -64,6 +66,8 @@ def get_span(page, text):
     return None
 
 def get_text_following_span(page, span):
+    if span is None:
+        return None
     ret = []
     for block in page.get_text('dict')['blocks']:
         for line in block.get('lines',[]):
@@ -79,31 +83,35 @@ def get_label_text(page, text):
 
 
 def use_pymupdf(fname):
-    import fitz
     doc = fitz.open(fname)
     for page in doc:
         count = 0
-        if page.number!=871:
-            continue
-
-        print("Subject:", get_label_text(page, 'Subject:'))
-        print("Date:", get_label_text(page,"Date:"))
-        exit(0)
 
         for lnk in page.get_links():
-            print(lnk)
             if is_mailto(lnk):
                 label = get_link_label(page, lnk)
-                print(page.number, label, lnk['uri'])
+                print(page.number, label, lnk['uri'].replace('mailto:',''))
                 count += 1
         if count>0:
+            print("Subject:", get_label_text(page, 'Subject:'))
+            print("Date:", get_label_text(page,"Date:"))
             print('\n')
 
+def show_page(fname, page_number):
+    doc = fitz.open(fname)
+    page = doc.load_page(page_number)
+    page.clean_contents()
+    print(page.get_text('html'))
 
 if __name__=="__main__":
     import argparse, resource
     parser = argparse.ArgumentParser(description='Read a PDF file and digest it.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("pdffile", help="PDF File to analyze")
+    parser.add_argument("--htmlpage", type=int, help="Write HTML for page")
     args = parser.parse_args()
+    if args.htmlpage:
+        show_page(args.pdffile, args.htmlpage)
+        exit(0)
+
     use_pymupdf(args.pdffile)
