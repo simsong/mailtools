@@ -18,6 +18,8 @@ import logging
 from email.parser import BytesParser
 from email import policy
 import quopri
+import imaplib
+import socket
 
 AUTORESPONDER_SECTION='autoresponder'
 USE_SENDMAIL=False
@@ -33,7 +35,7 @@ name_value_re = re.compile("[> ]*([a-zA-Z ]+): *(.*)")
 def make_reply(config,msgvars):
     reply = open(config[AUTORESPONDER_SECTION]['msg_file'], mode='r', encoding='utf-8').read()
     for (key,value) in msgvars.items():
-        if args.debug: print("make_reply: key={}  value={}".format(key,value))
+        if args.debug: print("make_reply: key={}  value={}".format(key,value),file=sys.stderr)
         reply=reply.replace("%"+key+"%",value)
     reply = reply.replace("%from_address%", config['autoresponder']['from_address'])
     reply = reply.replace("%sender_address%", config['autoresponder']['from_address'])
@@ -49,10 +51,10 @@ def send_message(*,config,from_addr,to_addrs,msg):
             raise ValueError("to_addrs[{}] is {} type {}".format(count,to,type(to)))
 
     if args.dry_run:
-        print("==== Will not send this message: ====\n{}\n====================\n".format(msg))
+        print("==== Will not send this message: ====\n{}\n====================\n".format(msg),file=sys.stderr)
         return
     if args.debug:
-        print("Sending mail")
+        print("Sending mail",file=sys.stderr)
 
     if USE_SENDMAIL:
         from subprocess import Popen,PIPE
@@ -69,7 +71,8 @@ def send_message(*,config,from_addr,to_addrs,msg):
         smtp.ehlo()
         smtp.login(config['smtp']['username'],config['smtp']['password'])
         smtp.sendmail(from_addr,to_addrs,msg.encode('utf8'))
-        print("Send mail to ",to_addrs," from ",from_addr," with SMTP . message length:",len(msg))
+        if args.debug:
+            print("Sent mail to ",to_addrs," from ",from_addr," with SMTP . message length:",len(msg),file=sys.stderr)
     
 
 def clean_email(email):
@@ -90,8 +93,8 @@ def process_msg(*,config,msg):
 
 
     if args.debug:
-        print("======================= process ====================")
-        print(msg)
+        print("======================= process ====================",file=sys.stderr)
+        print(msg,file=sys.stderr)
 
     csv_file  = config[AUTORESPONDER_SECTION]['csv_file']
     msgvars = {}                            # variables that get substituted in message
@@ -99,17 +102,20 @@ def process_msg(*,config,msg):
     for part in msg.walk():
         if part.get_content_maintype() == 'multipart':
             continue
-        text = part.get_body(preferencelist=('plain','html')).get_content()
+        plain = part.get_body(preferencelist=('plain','html'))
+        if plain is None:
+            continue
+        text = plain.get_content()
         if text.startswith('<html'):
             f = HTMLFilter()
             f.feed( text.replace("</div>","</div>\n").replace("<br","\n<br") )
             text = f.text
         lines = text.split("\n")
         if args.debug:
-            print("source message:")
+            print("source message:",file=sys.stderr)
             for (ct,line) in enumerate(lines):
-                print(ct,line)
-            print("------------------------------------------------")
+                print(ct,line,file=sys.stderr)
+            print("------------------------------------------------",file=sys.stderr)
 
         # read the input file and search for the substitution variables
         for line in lines:
@@ -121,7 +127,7 @@ def process_msg(*,config,msg):
             value = value.strip()
             if value:
                 if args.debug:
-                    print("process_msg: FOUND VARIABLE {} = {}".format(key,value))
+                    print("process_msg: FOUND VARIABLE {} = {}".format(key,value),file=sys.stderr)
                 if key=='email':
                     msgvars[key] = str(clean_email(value))
                 else:
@@ -188,14 +194,9 @@ def process_maildir(config):
             inbox.unlock()
 
 def process_imap(config):
-    import imaplib,socket
-    try:
-        if args.debug:
-            print("Connecting to ",config['imap']['server'])
-        M = imaplib.IMAP4_SSL(config['imap']['server'])
-    except socket.gaierror:
-        print("Unknown hostname:",config['imap']['server'])
-        exit(1)
+    if args.debug:
+        print("Connecting to ",config['imap']['server'])
+    M = imaplib.IMAP4_SSL(config['imap']['server'])
     M.login(config['imap']['username'], config['imap']['password'])
     M.select()
     typ, data = M.search(None, 'ALL')
@@ -286,4 +287,14 @@ if __name__=="__main__":
         process_maildir(config)
         
     if args.imap:
-        process_imap(config)
+        try:
+            process_imap(config)
+        except socket.gaierror:
+            logging.error("Unknown hostname: %s",config['imap']['server'])
+            exit(1)
+        except ConnectionRefusedError as e:
+            logging.debug("%s",e)
+            exit(0)
+        except imaplib.abort as e:
+            logging.error("imaplib.abort")
+            exit(0)
