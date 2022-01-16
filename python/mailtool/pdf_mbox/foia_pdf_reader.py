@@ -33,7 +33,12 @@ https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/automatically-
 
 """
 
-import fitz
+try:
+    import fitz
+except ImportError as e:
+    print("cannot import fitz. please try `python -m pip install --upgrade pip; python -m pip install --upgrade pymupdf`",file=sys.stderr)
+    raise e
+
 
 
 # https://pdfreader.readthedocs.io/en/latest/index.html
