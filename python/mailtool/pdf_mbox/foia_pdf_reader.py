@@ -33,6 +33,21 @@ https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/automatically-
 
 """
 
+DB_SCHEMA="""CREATE TABLE MESSAGES(message_date VARCHAR(20),
+                                   sender_email VARCHAR(255),
+                                   rcpt_email VARCHAR(255),
+                                   subject VARCHAR(255));"""
+
+DB_FILE = 'database.db'         # make changable
+
+import sys
+import os
+import datetime
+from os.path import abspath,dirname,basename
+
+import ctools.dbfile as dbfile
+
+
 try:
     import fitz
 except ImportError as e:
@@ -87,20 +102,45 @@ def get_label_text(page, text):
     return get_text_following_span(page, get_span(page, text))
 
 
-def use_pymupdf(fname):
+def parse_date(datestr):
+    if datestr is None:
+        return None
+    datestr = datestr.strip()
+    try:
+        return datetime.datetime.strptime(datestr, "%A, %B %d, %Y %I:%M:%S %p")
+    except ValueError:
+        return datetime.datetime.strptime(datestr, "%B %d, %Y %I:%M:%S %p")
+
+def dbload(fname):
+    print("page,date,to,from,subject".replace(",","\t"))
     doc = fitz.open(fname)
     for page in doc:
-        count = 0
+        blocks = page.get_text('blocks')
+        if not blocks:
+            continue
+        if not blocks[0][4].startswith('From:\n'):
+            continue
+        fields = {}
 
         for lnk in page.get_links():
             if is_mailto(lnk):
                 label = get_link_label(page, lnk)
-                print(page.number, label, lnk['uri'].replace('mailto:',''))
-                count += 1
-        if count>0:
-            print("Subject:", get_label_text(page, 'Subject:'))
-            print("Date:", get_label_text(page,"Date:"))
-            print('\n')
+                if label:
+                    label =label.lower().replace(':','')
+                    val = lnk['uri'].replace('mailto:','')
+                    if label in fields:
+                        fields[label] += ' ' + val
+                    else:
+                        fields[label] = val
+        if fields:
+            fields['page']    = page.number
+            fields['subject'] = get_label_text(page, 'Subject:')
+            fields['date']    = parse_date(get_label_text(page,"Date:"))
+            for f in ['to','from','subject']:
+                if f not in fields or fields[f] is None:
+                    fields[f] = ''
+            print("\t".join([str(fields['page']),fields['date'].isoformat(),fields['to'],fields['from'],fields['subject']]))
+
 
 def show_page(fname, page_number):
     doc = fitz.open(fname)
@@ -114,9 +154,10 @@ if __name__=="__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("pdffile", help="PDF File to analyze")
     parser.add_argument("--htmlpage", type=int, help="Write HTML for page")
+    parser.add_argument("--dbload", action='store_true', help='Load a MySQL database')
     args = parser.parse_args()
     if args.htmlpage:
         show_page(args.pdffile, args.htmlpage)
         exit(0)
 
-    use_pymupdf(args.pdffile)
+    dbload(args.pdffile)
