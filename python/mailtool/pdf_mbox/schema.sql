@@ -1,5 +1,7 @@
 /*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
 /*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+
+
 DROP TABLE IF EXISTS `subjects`;
 CREATE TABLE subjects (
    rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
@@ -62,6 +64,31 @@ CREATE TABLE messages (
 
 DROP TABLE IF EXISTS `recipients`;
 CREATE TABLE recipients (rowid INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(ROWID) ON DELETE CASCADE, type INTEGER, address_id INTEGER NOT NULL REFERENCES addresses(ROWID) ON DELETE CASCADE, position INTEGER);
+
+DROP TABLE IF EXISTS `keywords`;
+CREATE TABLE keywords (
+       rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
+       keyword TEXT,
+       FULLTEXT INDEX (keyword)
+       );
+
+DROP TABLE IF EXISTS `message_keywords`;
+CREATE TABLE message_keywords (
+       keyword_id INTEGER NOT NULL,
+       message_id INTEGER NOT NULL,
+       UNIQUE INDEX (keyword_id, message_id),
+       UNIQUE INDEX (message_id, keyword_id)
+       );
+
+DROP TABLE IF EXISTS `message_text`;
+CREATE TABLE message_text (
+       message_id INTEGER PRIMARY KEY,
+       full_text TEXT NOT NULL,
+       FULLTEXT INDEX (full_text)
+       );
+
+
+
 
 /*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
 /*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
