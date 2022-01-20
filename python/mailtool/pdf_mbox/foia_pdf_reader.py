@@ -47,14 +47,11 @@ from os.path import abspath,dirname,basename
 
 import ctools.dbfile as dbfile
 
-
 try:
     import fitz
 except ImportError as e:
     print("cannot import fitz. please try `python -m pip install --upgrade pip; python -m pip install --upgrade pymupdf`",file=sys.stderr)
     raise e
-
-
 
 # https://pdfreader.readthedocs.io/en/latest/index.html
 def is_mailto(lnk):
@@ -62,45 +59,6 @@ def is_mailto(lnk):
         return lnk['kind']==2 and lnk['uri'].startswith('mailto:')
     except KeyError:
         return False
-
-def get_link_label(page, lnk):
-    y0 = lnk['from'].y0
-    y1 = lnk['from'].y1
-    ymid = (y0+y1)/2
-    for block in page.get_text('dict')['blocks']:
-        for line in block.get('lines',[]):
-            for span in line['spans']:
-                bbox = span['bbox']
-                ymin = bbox[1]
-                ymax = bbox[3]
-                if(ymin <= ymid <= ymax):
-                    return span['text']
-    return None                 # could not determine
-
-def get_span(page, text):
-    for block in page.get_text('dict')['blocks']:
-        for line in block.get('lines',[]):
-            for span in line['spans']:
-                if span['text']==text:
-                    return span
-    return None
-
-def get_text_following_span(page, span):
-    if span is None:
-        return None
-    ret = []
-    for block in page.get_text('dict')['blocks']:
-        for line in block.get('lines',[]):
-            for sp in line['spans']:
-                if span==sp:
-                    continue
-                if span['bbox'][1] == sp['bbox'][1] and span['bbox'][3] == sp['bbox'][3]:
-                    ret.append(sp['text'])
-    return ' '.join(ret)
-
-def get_label_text(page, text):
-    return get_text_following_span(page, get_span(page, text))
-
 
 def parse_date(datestr):
     if datestr is None:
@@ -111,6 +69,80 @@ def parse_date(datestr):
     except ValueError:
         return datetime.datetime.strptime(datestr, "%B %d, %Y %I:%M:%S %p")
 
+class PageAnalyzer:
+    def __init__(self, page):
+        self.page = page
+
+    def get_link_label(self, lnk):
+        y0 = lnk['from'].y0
+        y1 = lnk['from'].y1
+        ymid = (y0+y1)/2
+        for block in self.page.get_text('dict')['blocks']:
+            for line in block.get('lines',[]):
+                for span in line['spans']:
+                    bbox = span['bbox']
+                    ymin = bbox[1]
+                    ymax = bbox[3]
+                    if(ymin <= ymid <= ymax):
+                        return span['text'].lower().replace(':','')
+        return None                 # could not determine
+
+    def get_span(self, text):
+        for block in self.page.get_text('dict')['blocks']:
+            for line in block.get('lines',[]):
+                for span in line['spans']:
+                    if span['text']==text:
+                        return span
+        return None
+
+    def get_text_following_span(self, span):
+        if span is None:
+            return None
+        ret = []
+        for block in self.page.get_text('dict')['blocks']:
+            for line in block.get('lines',[]):
+                for sp in line['spans']:
+                    if span==sp:
+                        continue
+                    if span['bbox'][1] == sp['bbox'][1] and span['bbox'][3] == sp['bbox'][3]:
+                        ret.append(sp['text'])
+        return ' '.join(ret)
+
+    def get_label_text(self, text):
+        return self.get_text_following_span(self.get_span( text ))
+
+def process_first_page(page):
+    pa     = PageAnalyzer(page)
+    fields = {}
+
+    for lnk in page.get_links():
+        if is_mailto(lnk):
+            label = pa.get_link_label( lnk )
+            if label:
+                val = lnk['uri'].replace('mailto:','')
+                if label in fields:
+                    fields[label] += ' ' + val
+                else:
+                    fields[label] = val
+    if fields:
+        fields['page']    = page.number
+        fields['subject'] = pa.get_label_text('Subject:')
+        fields['date']    = parse_date(pa.get_label_text("Date:"))
+        for f in ['to','from','subject']:
+            if f not in fields or fields[f] is None:
+                fields[f] = ''
+        print("\t".join([str(fields['page']),
+                         fields['date'].isoformat(),
+                         fields['to'],
+                         fields['from'],
+                         fields['subject']]))
+
+def process_page_text(page):
+    text = page.get_text('text')
+    print(text)
+
+
+
 def dbload(fname):
     print("page,date,to,from,subject".replace(",","\t"))
     doc = fitz.open(fname)
@@ -118,28 +150,9 @@ def dbload(fname):
         blocks = page.get_text('blocks')
         if not blocks:
             continue
-        if not blocks[0][4].startswith('From:\n'):
-            continue
-        fields = {}
-
-        for lnk in page.get_links():
-            if is_mailto(lnk):
-                label = get_link_label(page, lnk)
-                if label:
-                    label =label.lower().replace(':','')
-                    val = lnk['uri'].replace('mailto:','')
-                    if label in fields:
-                        fields[label] += ' ' + val
-                    else:
-                        fields[label] = val
-        if fields:
-            fields['page']    = page.number
-            fields['subject'] = get_label_text(page, 'Subject:')
-            fields['date']    = parse_date(get_label_text(page,"Date:"))
-            for f in ['to','from','subject']:
-                if f not in fields or fields[f] is None:
-                    fields[f] = ''
-            print("\t".join([str(fields['page']),fields['date'].isoformat(),fields['to'],fields['from'],fields['subject']]))
+        if blocks[0][4].startswith('From:\n'):
+            process_first_page(page)
+        process_page_text(page)
 
 
 def show_page(fname, page_number):
