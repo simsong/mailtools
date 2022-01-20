@@ -5,7 +5,7 @@ process and analyze mail.
 ## What's here?
 * [misc](misc/) -- Miscellaneous tools, including:
   * The [autoresponder.py](misc/autoresponder.py).
-  * [imaptool.py(misc/imaptool.py) --- for 
+  * [imaptool.py(misc/imaptool.py) --- for
 
 # Using with GMAIL
 1. Request an App Password https://support.google.com/mail/answer/185833?hl=en
@@ -23,7 +23,7 @@ process and analyze mail.
   - Identify where a person is located.
 
 * parse all iCal entries in mail
-* LDA on email? 
+* LDA on email?
 * Top emails every week.
 
 
