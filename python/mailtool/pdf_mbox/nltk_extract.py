@@ -48,8 +48,16 @@ def get_nnp_runs(text):
             nnp_run = ' '.join(currentCandidate)
             yield(nnp_run)
 
+def clean(text):
+    text = text.replace("|","")
+    text = text.replace("‘","")
+    text = text.replace("’","")
+    text = text.replace("“","")
+    text = text.replace("”","")
+    return text.strip()
+
 def v2(text):
-    print("\n".join(sorted(set(get_nnp_runs(text)))))
+    return sorted( set( [t for t in [clean(t) for t in get_nnp_runs(text)] if len(t)>0 ] ) )
 
 
 if __name__=="__main__":
@@ -58,4 +66,5 @@ if __name__=="__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("path", help="Files or Directories to scan")
     args = parser.parse_args()
-    v2( open(args.path).read())
+    text = open(args.path).read()
+    print("\n".join(v2( text )))
