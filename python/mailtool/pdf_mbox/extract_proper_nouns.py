@@ -49,7 +49,7 @@ def get_nnp_runs(text):
             yield(nnp_run)
 
 def v2(text):
-    print("\n".join(sorted(set(get_nnp_runs(text)))))
+    return sorted(set(get_nnp_runs(text)))
 
 
 if __name__=="__main__":
@@ -58,4 +58,5 @@ if __name__=="__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("path", help="Files or Directories to scan")
     args = parser.parse_args()
-    v2( open(args.path).read())
+    text = open(args.path).read()
+    print("\n".join(v2( text )))
