@@ -47,7 +47,11 @@ from os.path import abspath,dirname,basename
 
 import ctools.dbfile as dbfile
 
+<<<<<<< HEAD
 ROSETTE=True
+=======
+ROSETTE=False
+>>>>>>> origin/main
 
 if ROSETTE:
     import rosette
@@ -57,7 +61,10 @@ if ROSETTE:
 else:
     import extract_proper_nouns
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/main
 try:
     import fitz
 except ImportError as e:
