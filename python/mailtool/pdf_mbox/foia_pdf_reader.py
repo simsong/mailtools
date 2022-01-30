@@ -47,6 +47,16 @@ from os.path import abspath,dirname,basename
 
 import ctools.dbfile as dbfile
 
+ROSETTE=False
+
+if ROSETTE:
+    import rosette
+    from rosette.api import API,DocumentParameters, RosetteException
+    with open("rosette.txt","r") as f:
+        api = API(user_key=f.read().strip())
+else:
+    import extract_proper_nouns
+
 try:
     import fitz
 except ImportError as e:
@@ -131,16 +141,37 @@ def process_first_page(page):
         for f in ['to','from','subject']:
             if f not in fields or fields[f] is None:
                 fields[f] = ''
-        print("\t".join([str(fields['page']),
-                         fields['date'].isoformat(),
-                         fields['to'],
-                         fields['from'],
-                         fields['subject']]))
+        if False:
+            print("\t".join([str(fields['page']),
+                             fields['date'].isoformat(),
+                             fields['to'],
+                             fields['from'],
+                             fields['subject']]))
+        else:
+            print("Page: ",fields['page'])
+            print("From: ",fields['from'])
+            print("Subject: ",fields['subject'])
+            print("to: ",fields['to'])
+            print()
 
 def process_page_text(page):
     text = page.get_text('text')
-    print(text)
-
+    if ROSETTE:
+        params = DocumentParameters()
+        params["content"] = text
+        try:
+            res = api.entities(params)
+        except rosette.api.RosetteException:
+            return
+        for entity in res['entities']:
+            print(f"{entity['type']} {entity['normalized']}  ('{entity['mention']}')")
+    else:
+        proper_nouns = extract_proper_nouns.v2(text)
+        for(ct,line) in enumerate(proper_nouns,1):
+            print(ct,line)
+    print()
+    print()
+    print()
 
 
 def dbload(fname):
@@ -152,6 +183,8 @@ def dbload(fname):
             continue
         if blocks[0][4].startswith('From:\n'):
             process_first_page(page)
+        else:
+            print("page:",page.number)
         process_page_text(page)
 
 
