@@ -33,13 +33,35 @@ https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/automatically-
 
 """
 
+DB_SCHEMA="""CREATE TABLE MESSAGES(message_date VARCHAR(20),
+                                   sender_email VARCHAR(255),
+                                   rcpt_email VARCHAR(255),
+                                   subject VARCHAR(255));"""
+
+DB_FILE = 'database.db'         # make changable
+
+import sys
+import os
+import datetime
+from os.path import abspath,dirname,basename
+
+import ctools.dbfile as dbfile
+
+ROSETTE=False
+
+if ROSETTE:
+    import rosette
+    from rosette.api import API,DocumentParameters, RosetteException
+    with open("rosette.txt","r") as f:
+        api = API(user_key=f.read().strip())
+else:
+    import extract_proper_nouns
+
 try:
     import fitz
 except ImportError as e:
     print("cannot import fitz. please try `python -m pip install --upgrade pip; python -m pip install --upgrade pymupdf`",file=sys.stderr)
     raise e
-
-
 
 # https://pdfreader.readthedocs.io/en/latest/index.html
 def is_mailto(lnk):
@@ -48,59 +70,123 @@ def is_mailto(lnk):
     except KeyError:
         return False
 
-def get_link_label(page, lnk):
-    y0 = lnk['from'].y0
-    y1 = lnk['from'].y1
-    ymid = (y0+y1)/2
-    for block in page.get_text('dict')['blocks']:
-        for line in block.get('lines',[]):
-            for span in line['spans']:
-                bbox = span['bbox']
-                ymin = bbox[1]
-                ymax = bbox[3]
-                if(ymin <= ymid <= ymax):
-                    return span['text']
-    return None                 # could not determine
-
-def get_span(page, text):
-    for block in page.get_text('dict')['blocks']:
-        for line in block.get('lines',[]):
-            for span in line['spans']:
-                if span['text']==text:
-                    return span
-    return None
-
-def get_text_following_span(page, span):
-    if span is None:
+def parse_date(datestr):
+    if datestr is None:
         return None
-    ret = []
-    for block in page.get_text('dict')['blocks']:
-        for line in block.get('lines',[]):
-            for sp in line['spans']:
-                if span==sp:
-                    continue
-                if span['bbox'][1] == sp['bbox'][1] and span['bbox'][3] == sp['bbox'][3]:
-                    ret.append(sp['text'])
-    return ' '.join(ret)
+    datestr = datestr.strip()
+    try:
+        return datetime.datetime.strptime(datestr, "%A, %B %d, %Y %I:%M:%S %p")
+    except ValueError:
+        return datetime.datetime.strptime(datestr, "%B %d, %Y %I:%M:%S %p")
 
-def get_label_text(page, text):
-    return get_text_following_span(page, get_span(page, text))
+class PageAnalyzer:
+    def __init__(self, page):
+        self.page = page
+
+    def get_link_label(self, lnk):
+        y0 = lnk['from'].y0
+        y1 = lnk['from'].y1
+        ymid = (y0+y1)/2
+        for block in self.page.get_text('dict')['blocks']:
+            for line in block.get('lines',[]):
+                for span in line['spans']:
+                    bbox = span['bbox']
+                    ymin = bbox[1]
+                    ymax = bbox[3]
+                    if(ymin <= ymid <= ymax):
+                        return span['text'].lower().replace(':','')
+        return None                 # could not determine
+
+    def get_span(self, text):
+        for block in self.page.get_text('dict')['blocks']:
+            for line in block.get('lines',[]):
+                for span in line['spans']:
+                    if span['text']==text:
+                        return span
+        return None
+
+    def get_text_following_span(self, span):
+        if span is None:
+            return None
+        ret = []
+        for block in self.page.get_text('dict')['blocks']:
+            for line in block.get('lines',[]):
+                for sp in line['spans']:
+                    if span==sp:
+                        continue
+                    if span['bbox'][1] == sp['bbox'][1] and span['bbox'][3] == sp['bbox'][3]:
+                        ret.append(sp['text'])
+        return ' '.join(ret)
+
+    def get_label_text(self, text):
+        return self.get_text_following_span(self.get_span( text ))
+
+def process_first_page(page):
+    pa     = PageAnalyzer(page)
+    fields = {}
+
+    for lnk in page.get_links():
+        if is_mailto(lnk):
+            label = pa.get_link_label( lnk )
+            if label:
+                val = lnk['uri'].replace('mailto:','')
+                if label in fields:
+                    fields[label] += ' ' + val
+                else:
+                    fields[label] = val
+    if fields:
+        fields['page']    = page.number
+        fields['subject'] = pa.get_label_text('Subject:')
+        fields['date']    = parse_date(pa.get_label_text("Date:"))
+        for f in ['to','from','subject']:
+            if f not in fields or fields[f] is None:
+                fields[f] = ''
+        if False:
+            print("\t".join([str(fields['page']),
+                             fields['date'].isoformat(),
+                             fields['to'],
+                             fields['from'],
+                             fields['subject']]))
+        else:
+            print("Page: ",fields['page'])
+            print("From: ",fields['from'])
+            print("Subject: ",fields['subject'])
+            print("to: ",fields['to'])
+            print()
+
+def process_page_text(page):
+    text = page.get_text('text')
+    if ROSETTE:
+        params = DocumentParameters()
+        params["content"] = text
+        try:
+            res = api.entities(params)
+        except rosette.api.RosetteException:
+            return
+        for entity in res['entities']:
+            print(f"{entity['type']} {entity['normalized']}  ('{entity['mention']}')")
+    else:
+        proper_nouns = extract_proper_nouns.v2(text)
+        for(ct,line) in enumerate(proper_nouns,1):
+            print(ct,line)
+    print()
+    print()
+    print()
 
 
-def use_pymupdf(fname):
+def dbload(fname):
+    print("page,date,to,from,subject".replace(",","\t"))
     doc = fitz.open(fname)
     for page in doc:
-        count = 0
+        blocks = page.get_text('blocks')
+        if not blocks:
+            continue
+        if blocks[0][4].startswith('From:\n'):
+            process_first_page(page)
+        else:
+            print("page:",page.number)
+        process_page_text(page)
 
-        for lnk in page.get_links():
-            if is_mailto(lnk):
-                label = get_link_label(page, lnk)
-                print(page.number, label, lnk['uri'].replace('mailto:',''))
-                count += 1
-        if count>0:
-            print("Subject:", get_label_text(page, 'Subject:'))
-            print("Date:", get_label_text(page,"Date:"))
-            print('\n')
 
 def show_page(fname, page_number):
     doc = fitz.open(fname)
@@ -114,9 +200,10 @@ if __name__=="__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("pdffile", help="PDF File to analyze")
     parser.add_argument("--htmlpage", type=int, help="Write HTML for page")
+    parser.add_argument("--dbload", action='store_true', help='Load a MySQL database')
     args = parser.parse_args()
     if args.htmlpage:
         show_page(args.pdffile, args.htmlpage)
         exit(0)
 
-    use_pymupdf(args.pdffile)
+    dbload(args.pdffile)
