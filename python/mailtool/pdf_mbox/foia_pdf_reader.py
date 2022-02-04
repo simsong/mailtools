@@ -7,30 +7,6 @@ Read mail messages from a PDF file resulting from a FOIA request and produce:
 2. An index of all the PDF files
 3. A database.
 
-c.f.
-
-Using pymupdf
-https://pymupdf.readthedocs.io/en/latest/installation.html
-https://www.tutorialexample.com/python-split-and-merge-pdf-with-pymupdf-a-completed-guide/
-
-https://pymupdf.readthedocs.io/en/latest/faq.html#how-to-make-images-from-document-pages
-
-https://www.kirkusreviews.com/book-reviews/len-vlahos/hard-wired/
-http://ro.ecu.edu.au/cgi/viewcontent.cgi?article=1721&context=theses
-
-https://stackoverflow.com/questions/27744210/extract-hyperlinks-from-pdf-in-python
-https://www.tutorialspoint.com/extract-hyperlinks-from-pdf-in-python
-https://www.thepythoncode.com/article/extract-pdf-links-with-python
-
-
-https://towardsdatascience.com/how-to-extract-the-text-from-pdfs-using-python-and-the-google-cloud-vision-api-7a0a798adc13
-https://cloud.google.com/document-ai/docs/process-tables
-https://cloud.google.com/vision/docs/pdf
-https://aws.amazon.com/blogs/machine-learning/process-text-and-images-in-pdf-documents-with-amazon-textract/
-https://aws.amazon.com/blogs/machine-learning/translating-scanned-pdf-documents-using-amazon-translate-and-amazon-textract/
-https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/automatically-extract-content-from-pdf-files-using-amazon-textract.html
-
-
 """
 
 DB_SCHEMA="""CREATE TABLE MESSAGES(message_date VARCHAR(20),
@@ -43,28 +19,14 @@ DB_FILE = 'database.db'         # make changable
 import sys
 import os
 import datetime
+import collections
 from os.path import abspath,dirname,basename
 
 import ctools.dbfile as dbfile
 
-<<<<<<< HEAD
-ROSETTE=True
-=======
-ROSETTE=False
->>>>>>> origin/main
+import nltk_extract as extract
+#import rosette_extract as extract
 
-if ROSETTE:
-    import rosette
-    from rosette.api import API,DocumentParameters, RosetteException
-    with open("rosette.txt","r") as f:
-        api = API(user_key=f.read().strip())
-else:
-    import extract_proper_nouns
-
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/main
 try:
     import fitz
 except ImportError as e:
@@ -149,43 +111,71 @@ def process_first_page(page):
         for f in ['to','from','subject']:
             if f not in fields or fields[f] is None:
                 fields[f] = ''
-        if False:
-            print("\t".join([str(fields['page']),
-                             fields['date'].isoformat(),
-                             fields['to'],
-                             fields['from'],
-                             fields['subject']]))
-        else:
-            print("Page: ",fields['page'])
-            print("From: ",fields['from'])
-            print("Subject: ",fields['subject'])
-            print("to: ",fields['to'])
-            print()
+    return fields
 
 def process_page_text(page):
     text = page.get_text('text')
-    if ROSETTE:
-        params = DocumentParameters()
-        params["content"] = text
-        try:
-            res = api.entities(params)
-        except rosette.api.RosetteException:
-            return
-        for entity in res['entities']:
-            print(f"{entity['type']} {entity['normalized']}  ('{entity['mention']}')")
-    else:
-        proper_nouns = extract_proper_nouns.v2(text)
-        for(ct,line) in enumerate(proper_nouns,1):
-            print(ct,line)
+    proper_nouns = extract.v2(text)
+    for(ct,line) in enumerate(proper_nouns,1):
+        print(ct,line)
     print()
-    print()
-    print()
+
+def is_first_page(page=None, blocks=None):
+    """Return if the page is a first page (with email message metadata)"""
+    if not blocks:
+        blocks = page.get_text('blocks')
+    return blocks and blocks[0][4].startswith('From:\n')
+
+def make_terms_index(fname, index_fname):
+    doc = fitz.open(fname)
+    first_page_number = None
+    titles = dict()
+    pages  = collections.defaultdict(set)
+    froms  = dict()
+    fields = dict()
+    first_page_numbers = dict()
+    for page in doc:
+        if is_first_page(page = page):
+            first_page_number = page.number
+            fields            = process_first_page(page)
+        if not first_page_number:
+            continue
+        for noun_phrase in extract.v2( page.get_text( 'text' ) ):
+            noun_phrase_lc = noun_phrase.lower()
+            titles[ noun_phrase_lc] = noun_phrase
+            pages[ noun_phrase_lc ].add( page.number )
+            if page.number not in first_page_numbers:
+                first_page_numbers[ page.number ] = first_page_number
+            if first_page_number not in froms:
+                froms[ first_page_number ] = str(fields.get('from','?'))
+        if page.number==100:
+            break
+    for noun_phrase in sorted(titles.keys()):
+        print(titles[noun_phrase])
+        for page in pages[noun_phrase]:
+            print(f"    {page} {froms.get( first_page_numbers[page] , '?')}")
 
 
 def dbload(fname):
+    """Load all of the metadata for a page into the database"""
     print("page,date,to,from,subject".replace(",","\t"))
     doc = fitz.open(fname)
     for page in doc:
+        if is_first_page(page=page):
+            fields = process_first_page(page)
+            if False:
+                print("\t".join([str(fields['page']),
+                                 fields['date'].isoformat(),
+                                 fields['to'],
+                                 fields['from'],
+                                 fields['subject']]))
+            else:
+                print("Page: ",fields['page'])
+                print("From: ",fields['from'])
+                print("Subject: ",fields['subject'])
+                print("to: ",fields['to'])
+                print()
+
         blocks = page.get_text('blocks')
         if not blocks:
             continue
@@ -195,8 +185,8 @@ def dbload(fname):
             print("page:",page.number)
         process_page_text(page)
 
-
 def show_page(fname, page_number):
+    """output the HTML for a given page number"""
     doc = fitz.open(fname)
     page = doc.load_page(page_number)
     page.clean_contents()
@@ -207,11 +197,16 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Read a PDF file and digest it.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("pdffile", help="PDF File to analyze")
-    parser.add_argument("--htmlpage", type=int, help="Write HTML for page")
+    parser.add_argument("--htmlpage", type=int, help="Write HTML for a PDF page (largely for testing)")
     parser.add_argument("--dbload", action='store_true', help='Load a MySQL database')
+    parser.add_argument("--terms_index", help='Make an index of the terms')
     args = parser.parse_args()
     if args.htmlpage:
         show_page(args.pdffile, args.htmlpage)
         exit(0)
 
-    dbload(args.pdffile)
+    if args.dbload:
+        dbload(args.pdffile)
+
+    if args.terms_index:
+        make_terms_index(args.pdffile, args.terms_index)

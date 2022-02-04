@@ -59,7 +59,6 @@ def clean(text):
 def v2(text):
     return sorted( set( [t for t in [clean(t) for t in get_nnp_runs(text)] if len(t)>0 ] ) )
 
-
 if __name__=="__main__":
     import argparse, resource
     parser = argparse.ArgumentParser(description='Extract proper nouns',
