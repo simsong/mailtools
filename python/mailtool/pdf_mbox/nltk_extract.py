@@ -57,12 +57,7 @@ def clean(text):
     return text.strip()
 
 def v2(text):
-<<<<<<< HEAD:python/mailtool/pdf_mbox/nltk_extract.py
     return sorted( set( [t for t in [clean(t) for t in get_nnp_runs(text)] if len(t)>0 ] ) )
-=======
-    return sorted(set(get_nnp_runs(text)))
->>>>>>> origin/main:python/mailtool/pdf_mbox/extract_proper_nouns.py
-
 
 if __name__=="__main__":
     import argparse, resource
