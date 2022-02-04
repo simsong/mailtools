@@ -126,7 +126,11 @@ def is_first_page(page=None, blocks=None):
         blocks = page.get_text('blocks')
     return blocks and blocks[0][4].startswith('From:\n')
 
+def page_url(pn):
+    return f"<a href='https://cen-2020-001984.dxm-software.com/page/{pn}?format=pdf'>[page {pn}]</a>"
+
 def make_terms_index(fname, index_fname):
+    print("<html><body>")
     doc = fitz.open(fname)
     first_page_number = None
     titles = dict()
@@ -148,12 +152,12 @@ def make_terms_index(fname, index_fname):
                 first_page_numbers[ page.number ] = first_page_number
             if first_page_number not in froms:
                 froms[ first_page_number ] = str(fields.get('from','?'))
-        if page.number==100:
-            break
     for noun_phrase in sorted(titles.keys()):
-        print(titles[noun_phrase])
-        for page in pages[noun_phrase]:
-            print(f"    {page} {froms.get( first_page_numbers[page] , '?')}")
+        if len(pages[noun_phrase]) < 50:
+            print(f"<h3>{titles[noun_phrase]}</h3>")
+            for page in pages[noun_phrase]:
+                print(f"&nbsp;&nbsp;&nbsp;{page_url(page)} {froms.get( first_page_numbers[page] , '?')}<br>")
+    print("</body></html>")
 
 
 def dbload(fname):
