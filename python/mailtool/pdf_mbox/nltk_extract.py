@@ -26,7 +26,14 @@ def get_nnp_runs(text):
     sent_detector = nltk.data.load('tokenizers/punkt/english.pickle')
     for sentence in sent_detector.tokenize(text):
         tokenizedSentence = word_tokenize(sentence)
-        taggedSentence   = pos_tag(tokenizedSentence)
+        try:
+            taggedSentence   = pos_tag(tokenizedSentence)
+        except nltk.data.LookupError as e:
+            print("Loading NLTK packages")
+            nltk.download('punkt')
+            nltk.download('averaged_perceptron_tagger')
+            print("Restart please",file=sys.stderr)
+            raise e
         currentCandidate = []
 
         # Find the NNP runs

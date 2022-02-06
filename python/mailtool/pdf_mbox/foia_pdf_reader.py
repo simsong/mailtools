@@ -163,10 +163,33 @@ def make_terms_index(fname, index_fname):
 def dbload(fname):
     """Load all of the metadata for a page into the database"""
     print("page,date,to,from,subject".replace(",","\t"))
+    auth = dbfile.DBMySQLAuth.FromEnv(None)
     doc = fitz.open(fname)
+    print("auth=",auth)
+    print("doc=",doc)
+    csfr = dbfile.DBMySQL.csfr
     for page in doc:
         if is_first_page(page=page):
+
             fields = process_first_page(page)
+
+            subject = fields['subject']
+            normalized_subject = subject.lower().replace("re:","").strip()
+            csfr(auth, "INSERT INTO subjects (subject,normalized_subject) VALUES (%s,%s) ON DUPLICATE KEY UPDATE subject=subject", (subject,normalized_subject))
+            subject_id = csfr(auth, "SELECT rowid FROM subjects where subject=%s LIMIT 1", (subject,))[0][0]
+
+            csfr(auth, "INSERT INTO addresses (address,comment) VALUES (%s,'') ON DUPLICATE KEY UPDATE address=address", (fields['to'],))
+            to_id = csfr(auth, "SELECT rowid FROM addresses where address=%s LIMIT 1",(fields['to']))[0][0]
+
+            csfr(auth, "INSERT INTO addresses (address,comment) VALUES (%s,'')  ON DUPLICATE KEY UPDATE address=address", (fields['from'],))
+            from_id = csfr(auth, "SELECT rowid FROM addresses where address=%s LIMIT 1",(fields['from']))[0][0]
+
+            mid = csfr(auth, "INSERT INTO messages (date_received) VALUES (%s)", (fields['date'].timestamp()))
+
+            csfr(auth, "INSERT INTO recipients (message_id,address_id) VALUES (%s,%s) ON DUPLICATE KEY UPDATE message_id=message_id", (mid,to_id))
+            print(f"mid={mid} subject_id={subject_id} to_id={to_id} from_id={from_id}")
+
+
             if False:
                 print("\t".join([str(fields['page']),
                                  fields['date'].isoformat(),
