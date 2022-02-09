@@ -23,18 +23,18 @@ CREATE TABLE addresses (
 DROP TABLE IF EXISTS `recipients`;
 CREATE TABLE recipients (
     rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
-    message_id INTEGER NOT NULL,
+    messages_rowid INTEGER NOT NULL,
     type INTEGER,
     address_id INTEGER NOT NULL,
     position INTEGER,
-    FOREIGN KEY (message_id) REFERENCES messages(rowid) ON DELETE CASCADE,
+    FOREIGN KEY (messages_rowid) REFERENCES messages(messages_rowid) ON DELETE CASCADE,
     FOREIGN KEY (address_id) REFERENCES addresses(rowid) ON DELETE CASCADE
     );
 
 
 DROP TABLE IF EXISTS `messages`;
 CREATE TABLE messages (
-       rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
+       messages_rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
        message_id INTEGER,
        document_id BLOB,
        in_reply_to INTEGER,
@@ -67,20 +67,21 @@ DROP TABLE IF EXISTS `keywords`;
 CREATE TABLE keywords (
        rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
        keyword TEXT,
-       FULLTEXT INDEX (keyword)
+       FULLTEXT INDEX (keyword),
+       UNIQUE INDEX (keyword(768))
        );
 
 DROP TABLE IF EXISTS `message_keywords`;
 CREATE TABLE message_keywords (
+       messages_rowid INTEGER NOT NULL,
        keyword_id INTEGER NOT NULL,
-       message_id INTEGER NOT NULL,
-       UNIQUE INDEX (keyword_id, message_id),
-       UNIQUE INDEX (message_id, keyword_id)
+       UNIQUE INDEX (keyword_id, messages_rowid),
+       UNIQUE INDEX (messages_rowid, keyword_id)
        );
 
 DROP TABLE IF EXISTS `message_text`;
 CREATE TABLE message_text (
-       message_id INTEGER PRIMARY KEY AUTO_INCREMENT,
+       messages_rowid INTEGER PRIMARY KEY,
        full_text TEXT NOT NULL,
        FULLTEXT INDEX (full_text)
        );

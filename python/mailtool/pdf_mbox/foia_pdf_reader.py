@@ -20,6 +20,7 @@ import sys
 import os
 import datetime
 import collections
+import json
 from os.path import abspath,dirname,basename
 
 import ctools.dbfile as dbfile
@@ -29,8 +30,8 @@ import nltk_extract as extract
 
 try:
     import fitz
-except ImportError as e:
-    print("cannot import fitz. please try `python -m pip install --upgrade pip; python -m pip install --upgrade pymupdf`",file=sys.stderr)
+except (ImportError) as e:
+    print("\n\n***\n*** cannot import fitz. please try `python -m pip install --upgrade pip; python -m pip install --upgrade pymupdf`\n***\n",file=sys.stderr)
     raise e
 
 # https://pdfreader.readthedocs.io/en/latest/index.html
@@ -113,13 +114,6 @@ def process_first_page(page):
                 fields[f] = ''
     return fields
 
-def process_page_text(page):
-    text = page.get_text('text')
-    proper_nouns = extract.v2(text)
-    for(ct,line) in enumerate(proper_nouns,1):
-        print(ct,line)
-    print()
-
 def is_first_page(page=None, blocks=None):
     """Return if the page is a first page (with email message metadata)"""
     if not blocks:
@@ -160,57 +154,64 @@ def make_terms_index(fname, index_fname):
     print("</body></html>")
 
 
-def dbload(fname):
+def dbload(fname, args):
     """Load all of the metadata for a page into the database"""
     print("page,date,to,from,subject".replace(",","\t"))
     auth = dbfile.DBMySQLAuth.FromEnv(None)
     doc = fitz.open(fname)
-    print("auth=",auth)
-    print("doc=",doc)
-    csfr = dbfile.DBMySQL.csfr
+
+    def csfr(*args, **kwargs):
+        return dbfile.DBMySQL.csfr(auth, *args, **kwargs)
+    count = 0
+    mid   = None
+    message_text = None
+    keywords = dict()
     for page in doc:
         if is_first_page(page=page):
+            count += 1
+            if args.limit is not None and args.limit==count:
+                print(f"{args.limit} reached")
+                return
 
-            fields = process_first_page(page)
+            fields         = process_first_page(page)
+            messages_rowid = csfr("INSERT INTO messages (date_received) VALUES (%s)", (fields['date'].timestamp()))
+            message_text   = ""
 
-            subject = fields['subject']
+            subject            = fields['subject']
             normalized_subject = subject.lower().replace("re:","").strip()
-            csfr(auth, "INSERT INTO subjects (subject,normalized_subject) VALUES (%s,%s) ON DUPLICATE KEY UPDATE subject=subject", (subject,normalized_subject))
-            subject_id = csfr(auth, "SELECT rowid FROM subjects where subject=%s LIMIT 1", (subject,))[0][0]
+            csfr("INSERT INTO subjects (subject,normalized_subject) VALUES (%s,%s) ON DUPLICATE KEY UPDATE subject=subject", (subject,normalized_subject))
+            subject_id = csfr("SELECT rowid FROM subjects where subject=%s LIMIT 1", (subject,))[0][0]
 
-            csfr(auth, "INSERT INTO addresses (address,comment) VALUES (%s,'') ON DUPLICATE KEY UPDATE address=address", (fields['to'],))
-            to_id = csfr(auth, "SELECT rowid FROM addresses where address=%s LIMIT 1",(fields['to']))[0][0]
+            csfr("INSERT INTO addresses (address,comment) VALUES (%s,'') ON DUPLICATE KEY UPDATE address=address", (fields['to'],))
+            to_id = csfr("SELECT rowid FROM addresses where address=%s LIMIT 1",(fields['to']))[0][0]
 
-            csfr(auth, "INSERT INTO addresses (address,comment) VALUES (%s,'')  ON DUPLICATE KEY UPDATE address=address", (fields['from'],))
-            from_id = csfr(auth, "SELECT rowid FROM addresses where address=%s LIMIT 1",(fields['from']))[0][0]
+            csfr("INSERT INTO addresses (address,comment) VALUES (%s,'')  ON DUPLICATE KEY UPDATE address=address", (fields['from'],))
+            from_id = csfr("SELECT rowid FROM addresses where address=%s LIMIT 1",(fields['from']))[0][0]
 
-            mid = csfr(auth, "INSERT INTO messages (date_received) VALUES (%s)", (fields['date'].timestamp()))
+            csfr("INSERT INTO recipients (messages_rowid,address_id) VALUES (%s,%s) ON DUPLICATE KEY UPDATE messages_rowid=messages_rowid", (messages_rowid,to_id))
 
-            csfr(auth, "INSERT INTO recipients (message_id,address_id) VALUES (%s,%s) ON DUPLICATE KEY UPDATE message_id=message_id", (mid,to_id))
-            print(f"mid={mid} subject_id={subject_id} to_id={to_id} from_id={from_id}")
+            csfr("UPDATE messages SET sender=%s, subject=%s, message_id=%s where messages_rowid=%s", (from_id, subject_id, page.number, messages_rowid))
 
-
-            if False:
-                print("\t".join([str(fields['page']),
-                                 fields['date'].isoformat(),
-                                 fields['to'],
-                                 fields['from'],
-                                 fields['subject']]))
-            else:
-                print("Page: ",fields['page'])
-                print("From: ",fields['from'])
-                print("Subject: ",fields['subject'])
-                print("to: ",fields['to'])
-                print()
-
-        blocks = page.get_text('blocks')
-        if not blocks:
+        # Check to see if we are not in a message yet
+        if message_text is None:
             continue
-        if blocks[0][4].startswith('From:\n'):
-            process_first_page(page)
-        else:
-            print("page:",page.number)
-        process_page_text(page)
+        # Now handle the text of the page - both the full text and the 'keywords'
+        text = page.get_text('text')
+        message_text += text
+        print("insert text...")
+        csfr("INSERT INTO message_text (messages_rowid,full_text) values (%s,%s) ON DUPLICATE KEY UPDATE full_text=%s",(messages_rowid, message_text, message_text))
+
+        proper_nouns = set(extract.v2(text))
+        print("inserting",len(proper_nouns),"keywords...")
+        for(ct,keyword) in enumerate(proper_nouns,1):
+            if keyword not in keywords:
+                csfr("INSERT INTO keywords (keyword) VALUES (%s) ON DUPLICATE KEY UPDATE rowid=rowid",(keyword,))
+                keywords[keyword] = csfr("SELECT rowid FROM keywords where keyword=%s",(keyword,))
+            kwid = keywords[keyword]
+            csfr("INSERT INTO message_keywords (keyword_id, messages_rowid) VALUES (%s,%s) ON DUPLICATE KEY UPDATE keyword_id=keyword_id",(kwid, messages_rowid))
+        print("page",page.number,"is done")
+
+
 
 def show_page(fname, page_number):
     """output the HTML for a given page number"""
@@ -227,13 +228,14 @@ if __name__=="__main__":
     parser.add_argument("--htmlpage", type=int, help="Write HTML for a PDF page (largely for testing)")
     parser.add_argument("--dbload", action='store_true', help='Load a MySQL database')
     parser.add_argument("--terms_index", help='Make an index of the terms')
+    parser.add_argument("--limit", type=int, help="limit import to this many messages")
     args = parser.parse_args()
     if args.htmlpage:
         show_page(args.pdffile, args.htmlpage)
         exit(0)
 
     if args.dbload:
-        dbload(args.pdffile)
+        dbload(args.pdffile, args)
 
     if args.terms_index:
         make_terms_index(args.pdffile, args.terms_index)
