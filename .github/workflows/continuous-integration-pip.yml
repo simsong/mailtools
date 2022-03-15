@@ -27,6 +27,10 @@ jobs:
           if [ -r requirements.txt ]; then pip install -r requirements.txt ; fi
           if [ -r requirements-dev.txt ]; then pip install -r requirements-dev.txt ; fi
 
+          # nltk
+          python -c 'import nltk;nltk.download("punkt");'
+          python -c 'import nltk;nltk.download("averaged_perceptron_tagger");'
+
           # Install program analysis tools
           pip install black flake8 autopep8 || true
           pip install autopep8 || true
