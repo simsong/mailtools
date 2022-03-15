@@ -16,6 +16,12 @@ import collections
 import json
 from os.path import abspath,dirname,basename
 
+CTOOLS_DIR = dirname(dirname(dirname(dirname(abspath(__file__)))))
+print(CTOOLS_DIR)
+
+sys.path.append(CTOOLS_DIR)
+
+import ctools
 import ctools.dbfile as dbfile
 
 import nltk_extract as extract
