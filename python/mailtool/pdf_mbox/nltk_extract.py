@@ -37,9 +37,14 @@ def get_nnp_runs(text):
         currentCandidate = []
 
         # Find the NNP runs
+        ignore_run = False
         for (ct, (word, pos)) in enumerate(taggedSentence):
             if ct==0:           # ignore the first
                 continue
+
+            # Ignore runs that contain filenames
+            if word.lower().endswith(".pdf"):
+                ignore_run = True
 
             if pos == 'NNP':
                 currentCandidate.append(word)
@@ -47,9 +52,10 @@ def get_nnp_runs(text):
 
             if len(currentCandidate) > 0:
                 nnp_run = ' '.join(currentCandidate)
-                if nnp_run not in seen:
+                if (nnp_run not in seen) and (not ignore_run):
                     yield(nnp_run)
                 currentCandidate = []
+                ignore_run = False
 
         if len(currentCandidate) > 0:
             nnp_run = ' '.join(currentCandidate)
@@ -61,6 +67,7 @@ def clean(text):
     text = text.replace("’","")
     text = text.replace("“","")
     text = text.replace("”","")
+    text = text.replace("*"," ")
     return text.strip()
 
 def v2(text):
