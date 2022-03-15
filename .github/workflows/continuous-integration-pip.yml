@@ -1,6 +1,6 @@
 # This file based on https://gist.github.com/mwouts/9842452d020c08faf9e84a3bba38a66f
 # 2020-06-22 - slg - customized
-# 
+#
 name: CI (pip, flake8, pytest)
 on: [push]
 
@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         os: ['ubuntu-latest', 'macos-latest']
-        python-version: [3.7, 3.8]
+        python-version: [3.9, 3.10]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
