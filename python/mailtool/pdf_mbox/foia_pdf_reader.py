@@ -17,7 +17,8 @@ import json
 from os.path import abspath,dirname,basename
 
 CTOOLS_DIR = dirname(dirname(dirname(dirname(abspath(__file__)))))
-print(CTOOLS_DIR)
+print("ctools_dir:",CTOOLS_DIR)
+subprocess.call(['ls','-l',CTOOLS_DIR])
 
 sys.path.append(CTOOLS_DIR)
 
