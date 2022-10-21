@@ -9,24 +9,27 @@ Read mail messages from a PDF file resulting from a FOIA request and produce:
 
 """
 
-DB_SCHEMA="""CREATE TABLE MESSAGES(message_date VARCHAR(20),
-                                   sender_email VARCHAR(255),
-                                   rcpt_email VARCHAR(255),
-                                   subject VARCHAR(255));"""
-
-DB_FILE = 'database.db'         # make changable
-
 import sys
 import os
 import datetime
 import collections
 import json
+import subprocess
 from os.path import abspath,dirname,basename
 
+CTOOLS_DIR = dirname(dirname(dirname(dirname(abspath(__file__)))))
+print("ctools_dir:",CTOOLS_DIR)
+subprocess.call(['ls','-l',CTOOLS_DIR+"/ctools"])
+
+sys.path.append(CTOOLS_DIR)
+
+import ctools
 import ctools.dbfile as dbfile
 
 import nltk_extract as extract
 #import rosette_extract as extract
+
+SCHEMA_FILE = os.path.join( dirname( abspath( __file__ )), "schema.sql")
 
 try:
     import fitz
@@ -158,6 +161,11 @@ def dbload(fname, args):
     """Load all of the metadata for a page into the database"""
     print("page,date,to,from,subject".replace(",","\t"))
     auth = dbfile.DBMySQLAuth.FromEnv(None)
+
+    if args.zap:
+        dbc = dbfile.DBMySQL(auth)
+        dbc.create_schema(SCHEMA_FILE)
+
     doc = fitz.open(fname)
 
     def csfr(*args, **kwargs):
@@ -226,6 +234,7 @@ if __name__=="__main__":
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("pdffile", help="PDF File to analyze")
     parser.add_argument("--htmlpage", type=int, help="Write HTML for a PDF page (largely for testing)")
+    parser.add_argument("--zap", action='store_true', help='Wipe MySQL database before loading')
     parser.add_argument("--dbload", action='store_true', help='Load a MySQL database')
     parser.add_argument("--terms_index", help='Make an index of the terms')
     parser.add_argument("--limit", type=int, help="limit import to this many messages")
