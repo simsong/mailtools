@@ -1,6 +1,6 @@
 # This file based on https://gist.github.com/mwouts/9842452d020c08faf9e84a3bba38a66f
 # 2020-06-22 - slg - customized
-# 
+#
 name: CI (pip, flake8, pytest)
 on: [push]
 
@@ -28,6 +28,7 @@ jobs:
           # Install program analysis tools
           pip install black flake8 autopep8 || true
           pip install autopep8 || true
+
       #- name: Lint with flake8
       #  run: |
       #     stop the build if there are Python syntax errors or undefined names
@@ -43,7 +44,9 @@ jobs:
       #  run: pip install .
 
       - name: Test with pytest
-        run: pytest --cov=./ --cov-report=xml python
+        run: |
+          pip install pytest
+          pytest --cov=./ --cov-report=xml python
 
       #- name: Upload coverage
       #  uses: codecov/codecov-action@v1
