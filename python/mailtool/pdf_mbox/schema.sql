@@ -7,13 +7,14 @@ CREATE TABLE subjects (
    rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
    subject TEXT,
    normalized_subject TEXT,
+   UNIQUE INDEX(subject(768)),
    FULLTEXT INDEX (subject),
    FULLTEXT INDEX (normalized_subject)
    );
 
 DROP TABLE IF EXISTS `addresses`;
 CREATE TABLE addresses (
-   rowid INTEGER PRIMARY KEY,
+   rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
    address VARCHAR(255) COLLATE utf8_general_ci,
    comment VARCHAR(255) COLLATE utf8_general_ci,
    UNIQUE INDEX(address, comment)
@@ -21,19 +22,19 @@ CREATE TABLE addresses (
 
 DROP TABLE IF EXISTS `recipients`;
 CREATE TABLE recipients (
-    rowid INTEGER PRIMARY KEY,
-    message_id INTEGER NOT NULL,
+    rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
+    messages_rowid INTEGER NOT NULL,
     type INTEGER,
     address_id INTEGER NOT NULL,
     position INTEGER,
-    FOREIGN KEY (message_id) REFERENCES messages(rowid) ON DELETE CASCADE,
+    FOREIGN KEY (messages_rowid) REFERENCES messages(messages_rowid) ON DELETE CASCADE,
     FOREIGN KEY (address_id) REFERENCES addresses(rowid) ON DELETE CASCADE
     );
 
 
 DROP TABLE IF EXISTS `messages`;
 CREATE TABLE messages (
-       rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
+       messages_rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
        message_id INTEGER,
        document_id BLOB,
        in_reply_to INTEGER,
@@ -62,27 +63,25 @@ CREATE TABLE messages (
        );
 
 
-DROP TABLE IF EXISTS `recipients`;
-CREATE TABLE recipients (rowid INTEGER PRIMARY KEY, message_id INTEGER NOT NULL REFERENCES messages(ROWID) ON DELETE CASCADE, type INTEGER, address_id INTEGER NOT NULL REFERENCES addresses(ROWID) ON DELETE CASCADE, position INTEGER);
-
 DROP TABLE IF EXISTS `keywords`;
 CREATE TABLE keywords (
        rowid INTEGER PRIMARY KEY AUTO_INCREMENT,
        keyword TEXT,
-       FULLTEXT INDEX (keyword)
+       FULLTEXT INDEX (keyword),
+       UNIQUE INDEX (keyword(768))
        );
 
 DROP TABLE IF EXISTS `message_keywords`;
 CREATE TABLE message_keywords (
+       messages_rowid INTEGER NOT NULL,
        keyword_id INTEGER NOT NULL,
-       message_id INTEGER NOT NULL,
-       UNIQUE INDEX (keyword_id, message_id),
-       UNIQUE INDEX (message_id, keyword_id)
+       UNIQUE INDEX (keyword_id, messages_rowid),
+       UNIQUE INDEX (messages_rowid, keyword_id)
        );
 
 DROP TABLE IF EXISTS `message_text`;
 CREATE TABLE message_text (
-       message_id INTEGER PRIMARY KEY,
+       messages_rowid INTEGER PRIMARY KEY,
        full_text TEXT NOT NULL,
        FULLTEXT INDEX (full_text)
        );

@@ -7,60 +7,34 @@ Read mail messages from a PDF file resulting from a FOIA request and produce:
 2. An index of all the PDF files
 3. A database.
 
-c.f.
-
-Using pymupdf
-https://pymupdf.readthedocs.io/en/latest/installation.html
-https://www.tutorialexample.com/python-split-and-merge-pdf-with-pymupdf-a-completed-guide/
-
-https://pymupdf.readthedocs.io/en/latest/faq.html#how-to-make-images-from-document-pages
-
-https://www.kirkusreviews.com/book-reviews/len-vlahos/hard-wired/
-http://ro.ecu.edu.au/cgi/viewcontent.cgi?article=1721&context=theses
-
-https://stackoverflow.com/questions/27744210/extract-hyperlinks-from-pdf-in-python
-https://www.tutorialspoint.com/extract-hyperlinks-from-pdf-in-python
-https://www.thepythoncode.com/article/extract-pdf-links-with-python
-
-
-https://towardsdatascience.com/how-to-extract-the-text-from-pdfs-using-python-and-the-google-cloud-vision-api-7a0a798adc13
-https://cloud.google.com/document-ai/docs/process-tables
-https://cloud.google.com/vision/docs/pdf
-https://aws.amazon.com/blogs/machine-learning/process-text-and-images-in-pdf-documents-with-amazon-textract/
-https://aws.amazon.com/blogs/machine-learning/translating-scanned-pdf-documents-using-amazon-translate-and-amazon-textract/
-https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/automatically-extract-content-from-pdf-files-using-amazon-textract.html
-
-
 """
-
-DB_SCHEMA="""CREATE TABLE MESSAGES(message_date VARCHAR(20),
-                                   sender_email VARCHAR(255),
-                                   rcpt_email VARCHAR(255),
-                                   subject VARCHAR(255));"""
-
-DB_FILE = 'database.db'         # make changable
 
 import sys
 import os
 import datetime
+import collections
+import json
+import subprocess
 from os.path import abspath,dirname,basename
 
+CTOOLS_DIR = dirname(dirname(dirname(dirname(abspath(__file__)))))
+print("ctools_dir:",CTOOLS_DIR)
+subprocess.call(['ls','-l',CTOOLS_DIR+"/ctools"])
+
+sys.path.append(CTOOLS_DIR)
+
+import ctools
 import ctools.dbfile as dbfile
 
-ROSETTE=False
+import nltk_extract as extract
+#import rosette_extract as extract
 
-if ROSETTE:
-    import rosette
-    from rosette.api import API,DocumentParameters, RosetteException
-    with open("rosette.txt","r") as f:
-        api = API(user_key=f.read().strip())
-else:
-    import extract_proper_nouns
+SCHEMA_FILE = os.path.join( dirname( abspath( __file__ )), "schema.sql")
 
 try:
     import fitz
-except ImportError as e:
-    print("cannot import fitz. please try `python -m pip install --upgrade pip; python -m pip install --upgrade pymupdf`",file=sys.stderr)
+except (ImportError) as e:
+    print("\n\n***\n*** cannot import fitz. please try `python -m pip install --upgrade pip; python -m pip install --upgrade pymupdf`\n***\n",file=sys.stderr)
     raise e
 
 # https://pdfreader.readthedocs.io/en/latest/index.html
@@ -141,54 +115,114 @@ def process_first_page(page):
         for f in ['to','from','subject']:
             if f not in fields or fields[f] is None:
                 fields[f] = ''
-        if False:
-            print("\t".join([str(fields['page']),
-                             fields['date'].isoformat(),
-                             fields['to'],
-                             fields['from'],
-                             fields['subject']]))
-        else:
-            print("Page: ",fields['page'])
-            print("From: ",fields['from'])
-            print("Subject: ",fields['subject'])
-            print("to: ",fields['to'])
-            print()
+    return fields
 
-def process_page_text(page):
-    text = page.get_text('text')
-    if ROSETTE:
-        params = DocumentParameters()
-        params["content"] = text
-        try:
-            res = api.entities(params)
-        except rosette.api.RosetteException:
-            return
-        for entity in res['entities']:
-            print(f"{entity['type']} {entity['normalized']}  ('{entity['mention']}')")
-    else:
-        proper_nouns = extract_proper_nouns.v2(text)
-        for(ct,line) in enumerate(proper_nouns,1):
-            print(ct,line)
-    print()
-    print()
-    print()
-
-
-def dbload(fname):
-    print("page,date,to,from,subject".replace(",","\t"))
-    doc = fitz.open(fname)
-    for page in doc:
+def is_first_page(page=None, blocks=None):
+    """Return if the page is a first page (with email message metadata)"""
+    if not blocks:
         blocks = page.get_text('blocks')
-        if not blocks:
+    return blocks and blocks[0][4].startswith('From:\n')
+
+def page_url(pn):
+    return f"<a href='https://cen-2020-001984.dxm-software.com/page/{pn}?format=pdf'>[page {pn}]</a>"
+
+def make_terms_index(fname, index_fname):
+    print("<html><body>")
+    doc = fitz.open(fname)
+    first_page_number = None
+    titles = dict()
+    pages  = collections.defaultdict(set)
+    froms  = dict()
+    fields = dict()
+    first_page_numbers = dict()
+    for page in doc:
+        if is_first_page(page = page):
+            first_page_number = page.number
+            fields            = process_first_page(page)
+        if not first_page_number:
             continue
-        if blocks[0][4].startswith('From:\n'):
-            process_first_page(page)
-        else:
-            print("page:",page.number)
-        process_page_text(page)
+        for noun_phrase in extract.v2( page.get_text( 'text' ) ):
+            noun_phrase_lc = noun_phrase.lower()
+            titles[ noun_phrase_lc] = noun_phrase
+            pages[ noun_phrase_lc ].add( page.number )
+            if page.number not in first_page_numbers:
+                first_page_numbers[ page.number ] = first_page_number
+            if first_page_number not in froms:
+                froms[ first_page_number ] = str(fields.get('from','?'))
+    for noun_phrase in sorted(titles.keys()):
+        if len(pages[noun_phrase]) < 50:
+            print(f"<h3>{titles[noun_phrase]}</h3>")
+            for page in pages[noun_phrase]:
+                print(f"&nbsp;&nbsp;&nbsp;{page_url(page)} {froms.get( first_page_numbers[page] , '?')}<br>")
+    print("</body></html>")
+
+
+def dbload(fname, args):
+    """Load all of the metadata for a page into the database"""
+    print("page,date,to,from,subject".replace(",","\t"))
+    auth = dbfile.DBMySQLAuth.FromEnv(None)
+
+    if args.zap:
+        dbc = dbfile.DBMySQL(auth)
+        dbc.create_schema(SCHEMA_FILE)
+
+    doc = fitz.open(fname)
+
+    def csfr(*args, **kwargs):
+        return dbfile.DBMySQL.csfr(auth, *args, **kwargs)
+    count = 0
+    mid   = None
+    message_text = None
+    keywords = dict()
+    for page in doc:
+        if is_first_page(page=page):
+            count += 1
+            if args.limit is not None and args.limit==count:
+                print(f"{args.limit} reached")
+                return
+
+            fields         = process_first_page(page)
+            messages_rowid = csfr("INSERT INTO messages (date_received) VALUES (%s)", (fields['date'].timestamp()))
+            message_text   = ""
+
+            subject            = fields['subject']
+            normalized_subject = subject.lower().replace("re:","").strip()
+            csfr("INSERT INTO subjects (subject,normalized_subject) VALUES (%s,%s) ON DUPLICATE KEY UPDATE subject=subject", (subject,normalized_subject))
+            subject_id = csfr("SELECT rowid FROM subjects where subject=%s LIMIT 1", (subject,))[0][0]
+
+            csfr("INSERT INTO addresses (address,comment) VALUES (%s,'') ON DUPLICATE KEY UPDATE address=address", (fields['to'],))
+            to_id = csfr("SELECT rowid FROM addresses where address=%s LIMIT 1",(fields['to']))[0][0]
+
+            csfr("INSERT INTO addresses (address,comment) VALUES (%s,'')  ON DUPLICATE KEY UPDATE address=address", (fields['from'],))
+            from_id = csfr("SELECT rowid FROM addresses where address=%s LIMIT 1",(fields['from']))[0][0]
+
+            csfr("INSERT INTO recipients (messages_rowid,address_id) VALUES (%s,%s) ON DUPLICATE KEY UPDATE messages_rowid=messages_rowid", (messages_rowid,to_id))
+
+            csfr("UPDATE messages SET sender=%s, subject=%s, message_id=%s where messages_rowid=%s", (from_id, subject_id, page.number, messages_rowid))
+
+        # Check to see if we are not in a message yet
+        if message_text is None:
+            continue
+        # Now handle the text of the page - both the full text and the 'keywords'
+        text = page.get_text('text')
+        message_text += text
+        print("insert text...")
+        csfr("INSERT INTO message_text (messages_rowid,full_text) values (%s,%s) ON DUPLICATE KEY UPDATE full_text=%s",(messages_rowid, message_text, message_text))
+
+        proper_nouns = set(extract.v2(text))
+        print("inserting",len(proper_nouns),"keywords...")
+        for(ct,keyword) in enumerate(proper_nouns,1):
+            if keyword not in keywords:
+                csfr("INSERT INTO keywords (keyword) VALUES (%s) ON DUPLICATE KEY UPDATE rowid=rowid",(keyword,))
+                keywords[keyword] = csfr("SELECT rowid FROM keywords where keyword=%s",(keyword,))
+            kwid = keywords[keyword]
+            csfr("INSERT INTO message_keywords (keyword_id, messages_rowid) VALUES (%s,%s) ON DUPLICATE KEY UPDATE keyword_id=keyword_id",(kwid, messages_rowid))
+        print("page",page.number,"is done")
+
 
 
 def show_page(fname, page_number):
+    """output the HTML for a given page number"""
     doc = fitz.open(fname)
     page = doc.load_page(page_number)
     page.clean_contents()
@@ -199,11 +233,18 @@ if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Read a PDF file and digest it.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("pdffile", help="PDF File to analyze")
-    parser.add_argument("--htmlpage", type=int, help="Write HTML for page")
+    parser.add_argument("--htmlpage", type=int, help="Write HTML for a PDF page (largely for testing)")
+    parser.add_argument("--zap", action='store_true', help='Wipe MySQL database before loading')
     parser.add_argument("--dbload", action='store_true', help='Load a MySQL database')
+    parser.add_argument("--terms_index", help='Make an index of the terms')
+    parser.add_argument("--limit", type=int, help="limit import to this many messages")
     args = parser.parse_args()
     if args.htmlpage:
         show_page(args.pdffile, args.htmlpage)
         exit(0)
 
-    dbload(args.pdffile)
+    if args.dbload:
+        dbload(args.pdffile, args)
+
+    if args.terms_index:
+        make_terms_index(args.pdffile, args.terms_index)
