@@ -17,7 +17,7 @@ jobs:
         with:
           submodules: true
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v1
+        uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -54,5 +54,8 @@ jobs:
           pip install pytest
           pytest --cov=./ --cov-report=xml python
 
-      #- name: Upload coverage
-      #  uses: codecov/codecov-action@v1
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+          with:
+            verbose: true
+            
