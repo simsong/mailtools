@@ -87,8 +87,6 @@ class HTMLFilter(HTMLParser):
 
 def process_msg(*,config,msg):
     """Process an autoresponder request. If it can be processed, send out the message and reply True."""
-
-
     if args.debug:
         print("======================= process ====================")
         print(msg)
@@ -149,7 +147,7 @@ def process_msg(*,config,msg):
         if f.tell()==0:
             # print the headers
             print("\t".join(cols), file=f)
-        line = "\n".join([datetime.date.today().isoformat()] + [msgvars.get(col,"") for col in cols])
+        line = "\t".join([datetime.date.today().isoformat()] + [msgvars.get(col,"") for col in cols])
         f.write(line+"\n")
 
     to_addrs = [msgvars['email'], config['autoresponder']['cc_address']]

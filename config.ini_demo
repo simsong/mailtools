@@ -7,7 +7,7 @@
 [autoresponder]
 from: user@host.com
 csv_file: tally.csv
-keep_cols: Name, Email, domestic, undergraduates, gradautes
+keep_cols: Name, Email, domestic, undergraduates, graduates
 
 [bulkmail]
 msg_file: afile
