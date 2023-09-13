@@ -73,7 +73,7 @@ def send_message(*,config,from_addr,to_addrs,msg):
         smtp.sendmail(from_addr,to_addrs,msg.encode('utf8'))
         if args.debug:
             print("Sent mail to ",to_addrs," from ",from_addr," with SMTP . message length:",len(msg),file=sys.stderr)
-    
+
 
 def clean_email(email):
     m = re.search(r'([._\-\w]+@[\w.\-_]+)', email)
@@ -83,6 +83,7 @@ def clean_email(email):
 
 # https://stackoverflow.com/questions/14694482/converting-html-to-text-with-python
 from html.parser import HTMLParser
+
 class HTMLFilter(HTMLParser):
     text = ""
     def handle_data(self, data):
@@ -165,7 +166,7 @@ def process_msg(*,config,msg):
                      to_addrs = to_addrs,
                      msg=reply)
     return True
-    
+
 
 def process_maildir(config):
     inbox = mailbox.Maildir("~/Maildir")
@@ -233,9 +234,9 @@ def process_imap(config):
             print("IMAP abort")
             print(e)
         pass
-        
-                    
-    
+
+
+
 
 def mailmain(fname):
     with open(fname,"r") as f:
@@ -285,7 +286,7 @@ if __name__=="__main__":
     error = mailbox.mbox("~/error.mbox")
     if args.maildir:
         process_maildir(config)
-        
+
     if args.imap:
         try:
             process_imap(config)
