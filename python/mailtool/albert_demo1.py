@@ -1,5 +1,5 @@
 """albert_demo1.py:
- 
+
 Demonstrates a AlbertProcessor.
 
 This processor gets called for every email message in a path.  It
@@ -23,14 +23,13 @@ assert sys.version>'3.0.0'
 from albert.AbstractAlbertProcessor import AbstractAlbertProcessor
 from albert.Albert import Albert
 
-
 class SimpleMailStats(AbstractAlbertProcessor):
     def __init__(self, **kwargs):
         """__init__ is not required for an AbstractAlbertProcessor.
         SimpleMailStats has one. It is used to create counters for the senders, subjects, and receivers.
         """
         # this is critical. If you subclass __init__(), you must call super().__init__():
-        super().__init__(**kwargs) 
+        super().__init__(**kwargs)
         self.senders  = defaultdict(int)
         self.subjects = defaultdict(int)
         self.receivers = defaultdict(int)
@@ -45,12 +44,12 @@ class SimpleMailStats(AbstractAlbertProcessor):
 
         if 'From' in msg:
             try:
-                self.senders[ msg['From']] += 1 
+                self.senders[ msg['From']] += 1
             except:
-                self.senders[msg['From'].__str__()]+=1           
-   
+                self.senders[msg['From'].__str__()]+=1
+
         if 'subject' in msg:
-            try:    
+            try:
                 self.subjects[ msg['subject']] += 1
             except:
                 self.subjects[msg['subject'].__str__()]+=1
@@ -64,12 +63,12 @@ class SimpleMailStats(AbstractAlbertProcessor):
             if ct>=N:
                 break
         print("")
-            
+
     def report(self):
         self.printTopN('Receivers',self.receivers,10)
         self.printTopN('Senders',self.senders,10)
         self.printTopN('Subjects',self.subjects,10)
-        
+
     def print_message(self,message):
         if message['date'] == None:
             date = "No date"
@@ -84,13 +83,12 @@ class SimpleMailStats(AbstractAlbertProcessor):
         if message['subject'] == None:
             subject = "No Subject"
         else:
-            subject = message['subject']    
+            subject = message['subject']
 
         print(date)
         print(From)
         print(subject)
         print("\n")
-
 
 """
 Here is the initial albert cli.
