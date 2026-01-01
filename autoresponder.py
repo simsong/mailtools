@@ -15,6 +15,7 @@ import email.parser
 import smtplib
 import configparser
 import logging
+import json
 from email.parser import BytesParser
 from email import policy
 import quopri
@@ -28,7 +29,7 @@ USE_SENDMAIL=False
 
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 LOG_FILENAME = '/home/m57_mail/logfile.txt'
-logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG, format=LOG_FORMAT)
+logging.basicConfig(filename=LOG_FILENAME, level=logging.INFO, format=LOG_FORMAT)
 
 name_value_re = re.compile("[> ]*([a-zA-Z ]+): *(.*)")
 
@@ -92,7 +93,7 @@ class HTMLFilter(HTMLParser):
 def process_msg(*,config,msg):
     """Process an autoresponder request. If it can be processed, send out the message and reply True."""
 
-
+    logging.info("process_msg")
     if args.debug:
         print("======================= process ====================",file=sys.stderr)
         print(msg,file=sys.stderr)
@@ -159,7 +160,9 @@ def process_msg(*,config,msg):
         line = "\n".join([datetime.date.today().isoformat()] + [msgvars.get(col,"") for col in cols])
         f.write(line+"\n")
 
+    logging.info("msgvars=%s",json.dumps(msgvars))
     to_addrs = [msgvars['email'], config['autoresponder']['cc_address']]
+    logging.info("to_addrs=%s",json.dumps(to_addrs))
     reply = make_reply(config, msgvars)
     send_message(config=config,
                      from_addr=config['autoresponder']['from_address'],
@@ -193,6 +196,8 @@ def process_maildir(config):
             inbox.lock()
             inbox.discard(key)
             inbox.unlock()
+    if args.debug:
+        print("process_maildir finished")
 
 def process_imap(config):
     if args.debug:
@@ -201,12 +206,11 @@ def process_imap(config):
     M.login(config['imap']['username'], config['imap']['password'])
     M.select()
     typ, data = M.search(None, 'ALL')
+    logging.debug("typ=%s data=%s",typ,data)
     if args.debug:
-        print("typ=",typ)
-        print("data=",data)
+        print("typ=%s data=%s" % (typ,data) )
     for num in data[0].split():
-        if args.debug:
-            print("Fetch",num)
+        logging.info("fetch %s",num)
         typ, d2 = M.fetch(num, '(RFC822)')
         for val in d2:
             if type(val)==tuple:
@@ -229,14 +233,14 @@ def process_imap(config):
         M.expunge()
         M.close()
         M.logout()
-    except imaplib.IMAP4.     abort as e:
+    except imaplib.IMAP4.abort as e:
         if args.debug:
             print("IMAP abort")
             print(e)
         pass
 
-
-
+    if args.debug:
+        print("process_imap finished")
 
 def mailmain(fname):
     with open(fname,"r") as f:
@@ -283,7 +287,7 @@ if __name__=="__main__":
         exit(1)
 
     archive = mailbox.mbox("~/archive.mbox")
-    error = mailbox.mbox("~/error.mbox")
+    error   = mailbox.mbox("~/error.mbox")
     if args.maildir:
         process_maildir(config)
 
@@ -293,9 +297,9 @@ if __name__=="__main__":
         except socket.gaierror:
             logging.error("Unknown hostname: %s",config['imap']['server'])
             exit(1)
-        except ConnectionRefusedError as e:
+        except (ConnectionRefusedError,ConnectionResetError) as e:
             logging.debug("%s",e)
             exit(0)
-        except imaplib.abort as e:
+        except imaplib.IMAP4.abort as e:
             logging.error("imaplib.abort")
             exit(0)
