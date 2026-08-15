@@ -1,0 +1,147 @@
+"""Black-box acceptance tests for requirements in doc/end-to-end-tests.md."""
+
+from __future__ import annotations
+
+import hashlib
+import mailbox
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+from shutil import copy, copytree
+
+import pytest
+
+
+TEST_DATA = Path(__file__).parent / "data"
+
+
+def emlx_message_bytes(path: Path) -> bytes:
+    with path.open("rb") as source:
+        size = int(source.readline())
+        return source.read(size)
+
+
+@pytest.fixture
+def source_mail(tmp_path: Path) -> tuple[Path, dict[str, bytes]]:
+    source = tmp_path / "source"
+    source.mkdir()
+    mbox = source / "three_messages.mbox"
+    copy(TEST_DATA / "three_messages.mbox", mbox)
+    copytree(TEST_DATA / "emlx_maildir", source / "emlx_maildir")
+    messages = mailbox_message_bytes(mbox)
+    return source, {
+        "sent": messages[0],
+        "collision_one": messages[2],
+        "collision_two": emlx_message_bytes(source / "emlx_maildir/2024/001-collision.emlx"),
+        "infected": emlx_message_bytes(source / "emlx_maildir/2024/infected/003-infected.emlx"),
+    }
+
+
+def run_ingest(source: Path, archive: Path, owner_names: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mailarchiver",
+            "ingest",
+            "--source",
+            str(source),
+            "--archive",
+            str(archive),
+            "--owner-names",
+            str(owner_names),
+            "--clamav",
+            "on-demand",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def mailbox_message_bytes(path: Path) -> list[bytes]:
+    box = mailbox.mbox(path, factory=None, create=False)
+    try:
+        return [box.get_bytes(key, from_=False) for key in box.iterkeys()]
+    finally:
+        box.close()
+
+
+def assert_success(result: subprocess.CompletedProcess[str]) -> None:
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_ingest_routes_preserves_and_indexes_messages(
+    source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path
+) -> None:
+    """Requirements: canonical preservation, dedupe, routing, FTS, and audit log."""
+    source, raw = source_mail
+    archive = tmp_path / "archive"
+    owner_names = Path(__file__).parents[1] / "owner-names.txt"
+
+    assert_success(run_ingest(source, archive, owner_names))
+
+    assert mailbox_message_bytes(archive / "2024-Sent1.mbox") == [raw["sent"]]
+    assert mailbox_message_bytes(archive / "2024-Archive1.mbox") == [
+        raw["collision_one"],
+        raw["collision_two"],
+    ]
+    assert len(mailbox_message_bytes(archive / "INFECTED1.mbox")) == 1
+    assert all(b"autosave@example" not in item for item in mailbox_message_bytes(archive / "2024-Sent1.mbox"))
+
+    catalog = sqlite3.connect(archive / "archive.sqlite3")
+    try:
+        assert catalog.execute("SELECT count(*) FROM messages").fetchone() == (4,)
+        assert catalog.execute("SELECT count(*) FROM observations").fetchone() == (6,)
+        assert catalog.execute(
+            "SELECT date_source FROM messages WHERE message_id_normalized = 'infected@example'"
+        ).fetchone() == ("path-year",)
+        assert catalog.execute(
+            "SELECT disposition FROM observations WHERE detail = 'X-Apple-Auto-Saved'"
+        ).fetchone() == ("autosave-excluded",)
+        assert catalog.execute(
+            "SELECT count(*) FROM messages WHERE message_id_normalized = 'collision@example'"
+        ).fetchone() == (2,)
+        assert catalog.execute(
+            "SELECT sha256 FROM messages WHERE message_id_normalized = 'infected@example'"
+        ).fetchone() == (hashlib.sha256(raw["infected"]).hexdigest(),)
+    finally:
+        catalog.close()
+
+    search = sqlite3.connect(archive / "search.sqlite3")
+    try:
+        assert search.execute("SELECT count(*) FROM message_fts WHERE message_fts MATCH 'Eicar'").fetchone() == (1,)
+    finally:
+        search.close()
+    assert (archive / "2024-Archive1.mbox.sha256").is_file()
+    assert (archive / "INFECTED1.mbox.sha256").is_file()
+
+
+def test_rerun_is_idempotent_and_reviewable(source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path) -> None:
+    """Requirements: an unchanged source does not alter canonical mail or logical messages."""
+    source, _ = source_mail
+    archive = tmp_path / "archive"
+    owner_names = Path(__file__).parents[1] / "owner-names.txt"
+    assert_success(run_ingest(source, archive, owner_names))
+    before = {path.name: path.read_bytes() for path in archive.glob("*.mbox")}
+
+    assert_success(run_ingest(source, archive, owner_names))
+
+    assert {path.name: path.read_bytes() for path in archive.glob("*.mbox")} == before
+    catalog = sqlite3.connect(archive / "archive.sqlite3")
+    try:
+        assert catalog.execute("SELECT count(*) FROM messages").fetchone() == (4,)
+        assert catalog.execute("SELECT count(*) FROM ingest_runs").fetchone() == (2,)
+        assert catalog.execute("SELECT count(*) FROM observations").fetchone() == (12,)
+    finally:
+        catalog.close()
+
+    result = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "review", "--archive", str(archive), "--run", "2"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "duplicate" in result.stdout

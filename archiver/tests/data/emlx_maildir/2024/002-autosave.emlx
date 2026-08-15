@@ -1,0 +1,9 @@
+190
+Message-ID: <autosave@example>
+From: simsong@example.com
+To: recipient@example.net
+Subject: excluded autosave fixture
+Date: Sat, 06 Jan 2024 10:00:00 +0000
+X-Apple-Auto-Saved: 1
+
+exclude me

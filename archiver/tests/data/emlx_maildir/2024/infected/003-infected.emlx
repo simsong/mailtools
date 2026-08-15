@@ -1,0 +1,9 @@
+286
+Message-ID: <infected@example>
+From: sender@example.net
+To: recipient@example.net
+Subject: malformed infected fixture
+Content-Type: multipart/mixed; boundary=never-closed; charset=not-a-real-charset
+
+invalid utf8: ÿ
+X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*

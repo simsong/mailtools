@@ -1,0 +1,13 @@
+[project]
+name = "mailarchiver"
+version = "0.0.0"
+description = "Personal MBOX archive normalizer"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

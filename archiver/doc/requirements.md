@@ -1,0 +1,138 @@
+# Mail archive normalizer requirements
+
+## Purpose
+
+Create and maintain a cleartext, personal, long-lived archive of all of
+user email.  The archive is canonical; all databases and user
+interfaces are derived from it and may be recreated.
+
+The system must ingest the existing local archive, Gmail, IMAP accounts, and
+Apple Mail message files.  It must be safe to rerun an ingest operation on
+the same source without duplicating or rescanning messages already archived.
+
+## Canonical archive layout
+
+All deliverables reside in one archive directory.
+
+* Mail is stored only in standard MBOX files, using byte-preserving mboxrd
+  quoting.  Do not retain a per-message EML corpus.
+* Normal mail is partitioned by resolved message year and category:
+  `{YEAR}-Sent1.mbox` and `{YEAR}-Archive1.mbox`.
+* A file rolls over before it reaches 3.75 GiB.  Later parts are named
+  `{YEAR}-Sent2.mbox`, `{YEAR}-Sent3.mbox`, `{YEAR}-Archive2.mbox`, etc.
+* Messages detected as infected are instead placed in `INFECTED.mbox`, with
+  the same numeric rollover rule if needed.  They are never discarded or
+  altered.
+* A message's category is **Sent** if the parsed `From:` address contains,
+  case-insensitively, one of names in owner-names.txt; otherwise it is **Archive**.  The aliases are
+  configurable, and the matched address is retained.
+* The date is the valid RFC 5322 `Date:` value; otherwise use the earliest
+  valid `Received:` timestamp.  A message lacking both inherits the prior
+  resolved date in the same input mailbox stream.  If it is the only message
+  in that file and the only file in its containing directory, derive the year
+  from a four-digit year in the source path and record that fallback.  Never
+  route ordinary input to a `0000` mailbox merely because its date is absent.
+* `X-Apple-Auto-Saved` messages are excluded entirely.  Their source and
+  exclusion reason are retained in the primary database, but no MBOX copy is
+  created.
+* Each finished MBOX has a SHA-256 manifest recording its byte hash, message
+  count, and ordered `(Message-ID, message SHA-256)` records.
+
+The archive lives on the encrypted laptop filesystem.  BorgBackup and
+Backblaze provide independent backup; archive-internal encryption is not a
+requirement.
+
+## Deduplication and provenance
+
+* A duplicate is only a message with both the same normalized `Message-ID`
+  and the same SHA-256 of its RFC 5322 message bytes.  Never collapse all
+  messages sharing only a Message-ID.
+* Messages missing Message-ID are retained and identified by their SHA-256;
+  they are reported as metadata exceptions.
+* The archive records every source observation: source kind, source path or
+  remote account/folder/UID, source byte offset where applicable, ingest run,
+  and disposition (`archived`, `duplicate`, `autosave-excluded`, or error).
+* Idempotence is at message level.  After a raw message hash and Message-ID
+  have been obtained, a matching stored identity is skipped before ClamAV,
+  text extraction, and MBOX writing.  A deliberate rescan/reindex mode is
+  separate from normal ingest.
+
+## Malware handling
+
+* Each new message is streamed to ClamAV before normal archiving.
+* ClamAV outcomes are `clean`, `infected`, `unscannable`, or `scanner-error`,
+  with scanner version, signature database version, and diagnostic retained.
+* Only a positive detection routes a message to `INFECTED.mbox`; an
+  unscannable attachment or scanner failure does not destroy or silently
+  exclude a message.
+* Infected mail remains searchable by headers and body text, but attachment
+  text extraction is disabled by default.
+
+## Primary metadata database
+
+`archive.sqlite3` is authoritative metadata, not the authoritative message
+content.  It tracks at least:
+
+* logical message identity: raw and normalized Message-ID, message SHA-256,
+  date and date source, category, byte length, ClamAV result;
+* parsed `From:`, recipients (To/Cc/Bcc/Reply-To with role and order), and
+  decoded Subject;
+* each final MBOX filename, message byte offset, byte length, and archive
+  generation; and
+* sources, ingest runs, exclusions, duplicates, validation results, and
+  manifests.
+
+Logical messages and physical locations are separate relations.  MBOX offsets
+are generation-specific and must be replaced atomically when a file is
+sorted or repacked.
+
+## Search database
+
+`search.sqlite3` is a separate, disposable SQLite FTS5 database.  It indexes
+message SHA-256, normalized headers, extracted plain text, rendered HTML
+text, and permitted attachment text.  It must be fully rebuildable from the
+canonical MBOX files and `archive.sqlite3`, and is not backed up as a required
+preservation object.
+
+## Ingest sources
+
+* Recursive local-directory ingest recognizes MBOX streams, Apple Mail MBOX
+  packages, Maildir, individual RFC 5322 files, and Apple `.emlx` files.
+* `.emlx` input uses its leading decimal byte count to select exactly the
+  RFC 5322 message; Apple's trailing plist metadata is not part of the
+  message hash or output.
+* Gmail ingest uses OAuth and the Gmail API for incremental acquisition of
+  raw messages and labels.  It supports a rolling `--days N` mode using
+  Gmail's `newer_than:Nd` query.  Google Takeout MBOX is supported as an offline,
+  one-time baseline input; personal Takeout is not assumed to be
+  programmatically triggerable.
+* IMAP ingest supports TLS and authenticated account configuration, records
+  account/folder/UID provenance, and retrieves RFC 5322 bytes without marking
+  messages read or modifying the remote mailbox.
+
+## Sorting, validation, and recovery
+
+* At the end of an ingest run, touched normal MBOX files are sorted by
+  resolved timestamp and then message SHA-256 for deterministic ties.
+* Sorting writes a same-directory temporary replacement and preserves the
+  prior file as a backup.
+* The replacement and backup are parsed end-to-end.  Their unordered sets of
+  `(Message-ID, SHA-256)` must match exactly before the backup is deleted.
+* The MBOX byte hash, manifests, locations, and metadata database updates are
+  published transactionally.  Interrupted runs leave either the old verified
+  archive or a recoverable temporary/backup pair; they never publish a partial
+  archive as valid.
+* A `verify` command is strictly read-only: it reparses every canonical MBOX,
+  checks manifests, offsets, and database rows, and reports duplicate-policy
+  violations.
+* `refresh-index` rebuilds the disposable FTS database.  `review` queries the
+  committed source-observation log by run, source, and disposition.
+
+## Scope boundaries
+
+The first release is a local command-line normalizer and verifier.  Its TOML
+configuration holds archive and scanner policy; `owner-names.txt` remains a
+separate, one-name-per-line reusable classification input.  A local
+special-purpose search and message-viewing interface is a planned consumer of
+the two SQLite databases, not a reason to depend on Thunderbird or FoxTrot.
+No source mailbox is modified by this program.
