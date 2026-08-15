@@ -44,6 +44,22 @@ archiver/
   tests/
 ```
 
+## Current acceptance implementation
+
+The first implementation supports recursive local MBOX and `.emlx` ingest,
+owner-token Sent classification, exact `(Message-ID, SHA-256)` deduplication,
+autosave exclusion, path-year date fallback, a temporary on-demand `clamd`,
+`INFECTED1.mbox`, SQLite catalog/FTS files, SHA-256 MBOX manifests,
+per-run observation review, and year/correspondent reports.  The top-level
+`--archive` option selects the archive for every command; `ingest` takes one
+or more source roots as positional arguments and `--owner-names-file` selects
+the reusable owner-token list.  It is validated only by the checked-in
+three-message MBOX and three-message EMLX acceptance corpus.
+
+Rollover, date sorting/repacking, byte-offset locations, complete recipient
+metadata, resilient transactions/recovery, `verify`, `refresh-index`, richer
+text extraction, IMAP, Gmail, and the local search UI remain planned work.
+
 Use `uv` for dependencies and every test/run target through the repository
 Makefile.  Typed Pydantic structures carry all message metadata and external
 API responses; dictionaries are confined to API-boundary decoding.

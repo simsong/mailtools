@@ -44,15 +44,14 @@ def run_ingest(source: Path, archive: Path, owner_names: Path) -> subprocess.Com
             sys.executable,
             "-m",
             "mailarchiver",
-            "ingest",
-            "--source",
-            str(source),
             "--archive",
             str(archive),
-            "--owner-names",
+            "ingest",
+            "--owner-names-file",
             str(owner_names),
             "--clamav",
             "on-demand",
+            str(source),
         ],
         check=False,
         capture_output=True,
@@ -138,10 +137,28 @@ def test_rerun_is_idempotent_and_reviewable(source_mail: tuple[Path, dict[str, b
         catalog.close()
 
     result = subprocess.run(
-        [sys.executable, "-m", "mailarchiver", "review", "--archive", str(archive), "--run", "2"],
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "review", "--run", "2"],
         check=False,
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "duplicate" in result.stdout
+
+
+def test_report_counts_years_people_and_correspondents(source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path) -> None:
+    source, _ = source_mail
+    archive = tmp_path / "archive"
+    owner_names = Path(__file__).parents[1] / "owner-names.txt"
+    assert_success(run_ingest(source, archive, owner_names))
+
+    result = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "report", "--year", "2024", "--top", "2"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "year\tsent\treceived\tpeople\n2024\t1\t3\t3" in result.stdout
+    assert "top senders\nsender@example.net\t3" in result.stdout
+    assert "top recipients\nrecipient@example.net\t4" in result.stdout

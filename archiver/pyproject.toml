@@ -3,7 +3,19 @@ name = "mailarchiver"
 version = "0.0.0"
 description = "Personal MBOX archive normalizer"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+]
+
+[project.scripts]
+mailarchiver = "mailarchiver.__main__:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
