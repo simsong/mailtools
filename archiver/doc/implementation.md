@@ -46,15 +46,34 @@ archiver/
 
 ## Current acceptance implementation
 
-The first implementation supports recursive local MBOX and `.emlx` ingest,
-owner-token Sent classification, exact `(Message-ID, SHA-256)` deduplication,
-autosave exclusion, path-year date fallback, a temporary on-demand `clamd`,
+The first implementation supports recursive local MBOX, `.eml`, Maildir, and
+`.emlx` ingest, owner-token Sent classification, exact `(Message-ID, SHA-256)`
+deduplication, autosave exclusion, Date/Received/path-year date fallback, a temporary on-demand `clamd`,
 `INFECTED1.mbox`, SQLite catalog/FTS files, SHA-256 MBOX manifests,
 per-run observation review, and year/correspondent reports.  The top-level
 `--archive` option selects the archive for every command; `ingest` takes one
 or more source roots as positional arguments and `--owner-names-file` selects
-the reusable owner-token list.  It is validated only by the checked-in
-three-message MBOX and three-message EMLX acceptance corpus.
+the reusable owner-token list.  Ingest currently requires `--clamav`: it starts
+a foreground daemon only when no healthy configured socket is available, then
+removes the daemon's stale socket on exit; it never enables persistent or
+on-access scanning.  A thread-safe stderr scoreboard redraws in an interactive
+terminal at startup, every two seconds, and completion; logs receive one-line
+updates.  It uses streaming source byte offsets to show the current file and
+completion percentage and reports archived/previously-seen/autosave/infected
+counts.  Control-C commits completed work, closes the
+temporary scanner, refreshes manifests, reports a controlled interruption, and
+prints the partial-run archive report before returning 130.  An `ENOSPC` append is truncated back to the prior MBOX size where
+possible and reports a controlled nonzero stop.  It is validated only by the
+checked-in three-message MBOX and three-message EMLX acceptance corpus.
+
+Successful ingests also print the archive report after finalization.  The
+report shows per-year totals plus the top 10 senders and recipients by default;
+`report --top 0` suppresses those lists.
+
+`ingest --workers N` defaults to `min(os.cpu_count(), 8)`.  The source reader
+hashes and performs duplicate admission serially; admitted messages enter a
+bounded queue of at most `2N` concurrent ClamAV scans.  A single writer emits
+MBOX records and SQLite rows in source order after scan completion.
 
 Rollover, date sorting/repacking, byte-offset locations, complete recipient
 metadata, resilient transactions/recovery, `verify`, `refresh-index`, richer
@@ -70,10 +89,11 @@ API responses; dictionaries are confined to API-boundary decoding.
 transactions, and a schema version table.  Principal relations are:
 
 ```text
+email_addresses(address_pk, address UNIQUE)
 messages(message_pk, message_id_raw, message_id_normalized, sha256 UNIQUE,
-         date_utc, date_source, category, from_address, subject, byte_length,
+         date_utc, date_source, category, sender_address_pk, subject, byte_length,
          clamav_status, clamav_detail, created_run)
-recipients(message_pk, role, position, address, display_name)
+recipients(message_pk, address_pk)
 mbox_generations(generation_pk, filename, sha256, message_count, byte_count,
                  created_run, valid)
 locations(message_pk, generation_pk, byte_offset, byte_length)
@@ -87,7 +107,9 @@ manifests(generation_pk, pathname, sha256, created_at)
 `message_pk` is nullable in `observations` so malformed and autosave-excluded
 source records are still reviewable.  The deduplication lookup is indexed on `(message_id_normalized, sha256)`;
 `sha256` also supports the missing-Message-ID exception path.  Do not make
-Message-ID unique.  Add indexes for date/category, sender, recipients, and
+Message-ID unique.  `email_addresses.address`, `messages.sender_address_pk`,
+and `recipients.address_pk` are indexed; recipient role and ordering are not
+preserved.  Add indexes for date/category and
 location lookup.
 
 `search.sqlite3` has its own schema and does not use cross-database foreign

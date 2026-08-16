@@ -60,6 +60,29 @@ requirement.
 ## Malware handling
 
 * Each new message is streamed to ClamAV before normal archiving.
+* The local CLI currently requires the `--clamav` switch.  This starts one
+  foreground `clamd` for the ingest when the configured local socket is not
+  healthy, reuses a healthy existing daemon without stopping it, and never
+  enables on-access or scheduled scanning.
+* `ingest --workers N` controls the bounded ClamAV scan pool.  Its default is
+  the detected CPU count capped at eight.  Source reading, duplicate decisions,
+  SQLite commits, and canonical MBOX publication remain single-writer.
+* Ingest progress is written to standard error at startup, every two seconds,
+  and completion.  An interactive terminal receives a redraw-in-place
+  scoreboard; redirected output remains line-oriented.  Both report the run
+  start, elapsed time, processed count, average rate, resolved date range,
+  current year/current-year count, current source file, and source-file byte
+  completion percentage.  It separately reports archived, duplicate
+  (previously-seen and skipped), autosave-excluded, and infected counts.
+* Control-C is a graceful stop: close scanner and MBOX resources, commit
+  completed messages and observations, refresh manifests, report interruption,
+  print the standard archive report for the completed partial run, and return
+  exit status 130 without a traceback.  An `ENOSPC` MBOX append
+  must be rolled back to the prior file size where possible, reported, and
+  stopped without silently treating the message as archived.
+* Completed and interrupted ingests print the archive report.  Reports always
+  include year totals and default to the top 10 senders and recipients for the
+  selected scope; `--top 0` suppresses correspondent lists.
 * ClamAV outcomes are `clean`, `infected`, `unscannable`, or `scanner-error`,
   with scanner version, signature database version, and diagnostic retained.
 * Only a positive detection routes a message to `INFECTED.mbox`; an
@@ -75,8 +98,7 @@ content.  It tracks at least:
 
 * logical message identity: raw and normalized Message-ID, message SHA-256,
   date and date source, category, byte length, ClamAV result;
-* parsed `From:`, recipients (To/Cc/Bcc/Reply-To with role and order), and
-  decoded Subject;
+* parsed sender and recipient address foreign keys, and decoded Subject;
 * each final MBOX filename, message byte offset, byte length, and archive
   generation; and
 * sources, ingest runs, exclusions, duplicates, validation results, and
@@ -85,6 +107,10 @@ content.  It tracks at least:
 Logical messages and physical locations are separate relations.  MBOX offsets
 are generation-specific and must be replaced atomically when a file is
 sorted or repacked.
+
+Email address text is normalized into `email_addresses(address_pk, address)`.
+`messages.sender_address_pk` and `recipients.address_pk` reference that table;
+recipient role and header order are intentionally not retained.
 
 ## Search database
 

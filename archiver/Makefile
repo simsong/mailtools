@@ -1,9 +1,9 @@
-.PHONY: check run test-e2e
+.PHONY: check run test
 
-check: test-e2e
+check: test
 
 run:
 	uv run mailarchiver $(ARGS)
 
-test-e2e:
-	uv run pytest -q tests/test_end_to_end.py
+test:
+	uv run pytest -q

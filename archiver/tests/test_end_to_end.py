@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import mailbox
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -50,7 +51,6 @@ def run_ingest(source: Path, archive: Path, owner_names: Path) -> subprocess.Com
             "--owner-names-file",
             str(owner_names),
             "--clamav",
-            "on-demand",
             str(source),
         ],
         check=False,
@@ -79,7 +79,15 @@ def test_ingest_routes_preserves_and_indexes_messages(
     archive = tmp_path / "archive"
     owner_names = Path(__file__).parents[1] / "owner-names.txt"
 
-    assert_success(run_ingest(source, archive, owner_names))
+    result = run_ingest(source, archive, owner_names)
+    assert_success(result)
+    assert "completed:" in result.stderr
+    assert "processed=6" in result.stderr
+    assert "progress:" in result.stderr
+    assert "file=" in result.stderr
+    assert "seen_skipped=" in result.stderr
+    assert "year\tsent\treceived\tpeople" in result.stdout
+    assert "top senders" in result.stdout
 
     assert mailbox_message_bytes(archive / "2024-Sent1.mbox") == [raw["sent"]]
     assert mailbox_message_bytes(archive / "2024-Archive1.mbox") == [
@@ -105,6 +113,8 @@ def test_ingest_routes_preserves_and_indexes_messages(
         assert catalog.execute(
             "SELECT sha256 FROM messages WHERE message_id_normalized = 'infected@example'"
         ).fetchone() == (hashlib.sha256(raw["infected"]).hexdigest(),)
+        assert catalog.execute("SELECT count(*) FROM email_addresses").fetchone() == (3,)
+        assert catalog.execute("SELECT count(*) FROM messages JOIN email_addresses ON email_addresses.address_pk = messages.sender_address_pk WHERE address = 'sender@example.net'").fetchone() == (3,)
     finally:
         catalog.close()
 
@@ -162,3 +172,34 @@ def test_report_counts_years_people_and_correspondents(source_mail: tuple[Path, 
     assert "year\tsent\treceived\tpeople\n2024\t1\t3\t3" in result.stdout
     assert "top senders\nsender@example.net\t3" in result.stdout
     assert "top recipients\nrecipient@example.net\t4" in result.stdout
+
+
+def test_interrupt_stops_cleanly(source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path) -> None:
+    """Requirement: Ctrl-C exits cleanly without an exception traceback."""
+    source, _ = source_mail
+    archive = tmp_path / "archive"
+    owner_names = Path(__file__).parents[1] / "owner-names.txt"
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "mailarchiver",
+            "--archive",
+            str(archive),
+            "ingest",
+            "--owner-names-file",
+            str(owner_names),
+            "--clamav",
+            str(source),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stderr.readline().startswith("started:")
+    process.send_signal(signal.SIGINT)
+    stdout, stderr = process.communicate(timeout=20)
+    assert process.returncode == 130, stdout + stderr
+    assert "interrupted:" in stderr
+    assert "Traceback" not in stderr
+    assert stdout.startswith("year\tsent\treceived\tpeople\n")

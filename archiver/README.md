@@ -29,20 +29,37 @@ The following command recursively reads MBOX and `.emlx` files below
 for the ingest run if no daemon is already listening on the configured local
 socket.
 
+### `--clamav`
+
+`--clamav` is currently required on every ingest.  It scans each new
+message through the locally configured `clamd` socket before the message is
+written to a normal MBOX.  If no healthy daemon is listening, mailarchiver
+starts one foreground daemon for this ingest only, reusing its loaded
+signatures, and stops it afterward.  If a healthy local daemon already owns
+the socket, mailarchiver uses it and leaves it running.
+
+This option does **not** enable on-access scanning, a login service, or a
+scheduled scan.  It requires a configured ClamAV signature database; scanner
+startup or scan errors stop the current ingest rather than silently treating
+mail as clean.  A positive detection is retained in `INFECTED1.mbox`.
+
 ```console
-uv run mailarchiver --archive /path/to/mail-archive ingest --owner-names-file owner-names.txt --clamav on-demand /path/to/source-mail
+uv run mailarchiver --archive /path/to/mail-archive ingest --owner-names-file owner-names.txt --clamav /path/to/source-mail
 ```
 
 For example, with the project's supplied owner-token list and a new archive:
 
 ```console
-uv run mailarchiver --archive "$HOME/arch-local/normalized-mail" ingest --owner-names-file owner-names.txt --clamav on-demand "$HOME/arch-local/SLG Mail"
+uv run mailarchiver --archive "$HOME/arch-local/normalized-mail" ingest --owner-names-file owner-names.txt --clamav "$HOME/arch-local/SLG Mail"
 ```
+
+ClamAV scan workers default to the CPU count, capped at eight.  Override the
+limit for a benchmark or a less capable machine with `--workers N`.
 
 Messages are classified as `Sent` when their parsed `From:` address contains a
 case-insensitive token in `owner-names.txt`; other clean messages go to
-`{YEAR}-Archive1.mbox`.  A positive ClamAV detection goes to
-`INFECTED1.mbox`.  `X-Apple-Auto-Saved` messages are logged but not copied.
+`{YEAR}-Archive1.mbox`.  `X-Apple-Auto-Saved` messages are logged but not
+copied.
 
 The archive directory contains:
 
@@ -53,6 +70,30 @@ The archive directory contains:
 One or more source roots belong at the end of `ingest`; rerunning the same
 input records new observations but does not rescan or copy an already archived
 message with the same normalized `Message-ID` and raw SHA-256.
+
+After a completed or interrupted ingest, mailarchiver prints the archive
+report: yearly sent/received/people totals and the 20 most frequent senders
+and recipients.
+
+During ingest, a heartbeat is written to standard error immediately, every two
+seconds, and when the run finishes.  It shows the ingest start time, elapsed
+time, processed-message count, average messages per second, earliest and
+latest resolved message dates, current message year, that year's count, and
+the current source file with its byte-completion percentage.  On a terminal it
+redraws as a five-line scoreboard; redirected output stays line-oriented for
+logs.  It also counts archived mail, previously-seen duplicate skips,
+autosave exclusions, and infected messages.
+
+## Interrupts and disk space
+
+Pressing Control-C performs a controlled shutdown: mailarchiver closes the
+on-demand scanner and MBOX files, commits work through the last completed
+message, refreshes manifests, prints `interrupted: ...`, and exits with status
+130 rather than a traceback.  It then prints the normal `report` output for
+the committed partial archive.  If an MBOX append reports `ENOSPC`, mailarchiver
+truncates that attempted append back to its prior size where possible, prints
+`disk full: ...`, and exits nonzero.  Free space before continuing; do not
+assume a manifest can be refreshed when the filesystem is full.
 
 ## Review ingest observations
 
@@ -68,11 +109,11 @@ uv run mailarchiver --archive /path/to/mail-archive review --run 1
 
 ## Report archive contents
 
-`report` reads only `archive.sqlite3`.  By default it lists each year with the
-number of sent and received messages and the number of distinct email
-addresses appearing as a sender or recipient.  `--year` accepts one year or
-an inclusive range.  `--top N` additionally lists the top N senders and
-recipients and requires `--year`.
+`report` reads only `archive.sqlite3`.  It lists each year with the number of
+sent and received messages and the number of distinct email addresses
+appearing as a sender or recipient.  It also lists the top 10 senders and
+recipients for the selected scope.  `--year` accepts one year or an inclusive
+range; `--top N` changes the number of names (`--top 0` suppresses them).
 
 ```console
 uv run mailarchiver --archive /path/to/mail-archive report
