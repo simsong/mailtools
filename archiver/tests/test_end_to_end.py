@@ -120,7 +120,7 @@ def test_ingest_routes_preserves_and_indexes_messages(
 
     search = sqlite3.connect(archive / "search.sqlite3")
     try:
-        assert search.execute("SELECT count(*) FROM message_fts WHERE message_fts MATCH 'Eicar'").fetchone() == (1,)
+        assert search.execute("SELECT count(*) FROM message_fts WHERE message_fts MATCH 'Eicar'").fetchone() == (0,)
     finally:
         search.close()
     assert (archive / "2024-Archive1.mbox.sha256").is_file()

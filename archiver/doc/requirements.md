@@ -115,8 +115,11 @@ recipient role and header order are intentionally not retained.
 ## Search database
 
 `search.sqlite3` is a separate, disposable SQLite FTS5 database.  It indexes
-message SHA-256, normalized headers, extracted plain text, rendered HTML
-text, and permitted attachment text.  It must be fully rebuildable from the
+message SHA-256, normalized headers, `text/plain` body text when present,
+otherwise rendered `text/html`, otherwise safe single-part message text.  It
+does not index attachment bytes by default.  `--index-attachments` enables
+text attachment indexing; binary attachment extraction is a separately
+configured capability.  It must be fully rebuildable from the
 canonical MBOX files and `archive.sqlite3`, and is not backed up as a required
 preservation object.
 

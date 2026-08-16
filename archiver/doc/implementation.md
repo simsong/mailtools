@@ -114,7 +114,11 @@ location lookup.
 
 `search.sqlite3` has its own schema and does not use cross-database foreign
 keys.  Its FTS5 table includes an unindexed `sha256` column plus searchable
-headers, body text, and attachment text.  Rebuild it in a temporary database,
+headers and selected body text: `text/plain` first, otherwise rendered
+`text/html`, otherwise a safe single-part fallback.  Attachment bytes are
+excluded by default.  `--index-attachments` currently includes text
+attachments only; Apache Tika is the planned optional extractor for PDF and
+Office attachments.  Rebuild it in a temporary database,
 validate row identities against `archive.sqlite3`, then atomically replace the
 old search database.
 

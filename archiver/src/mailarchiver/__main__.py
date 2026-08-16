@@ -21,6 +21,7 @@ from .catalog import address_pk, create_catalog, create_search, owner_tokens
 from .message import ParsedMessage, parse_message
 from .mbox import DiskFullError, add_message, mailbox_name, write_manifests
 from .scanner import ClamScanner
+from .search import index_message
 from .sources import SourceMessage, source_messages
 
 DEFAULT_REPORT_TOP = 10
@@ -167,7 +168,7 @@ def ingest(args: argparse.Namespace) -> None:
             box = mailbox.mbox(mbox_path, create=True)
             boxes[mbox_path] = box
         add_message(box, mbox_path, raw)
-        search.execute("INSERT INTO message_fts(sha256, content) VALUES (?, ?)", (parsed.sha256, raw.decode("utf-8", "replace")))
+        index_message(search, raw, args.index_attachments)
         catalog.execute("INSERT INTO observations(run_pk, message_pk, source_path, disposition, detail) VALUES (?, ?, ?, ?, ?)", (run_pk, message_pk, str(path), "archived", category))
         catalog.commit()
         search.commit()
@@ -290,6 +291,25 @@ def report(args: argparse.Namespace) -> None:
     print_report(Path(args.archive), report_years(args.year), args.top)
 
 
+def refresh_index(args: argparse.Namespace) -> None:
+    archive = Path(args.archive)
+    temporary = archive / "search.sqlite3.tmp"
+    temporary.unlink(missing_ok=True)
+    search = create_search(temporary)
+    try:
+        for path in archive.glob("*.mbox"):
+            box = mailbox.mbox(path, factory=None, create=False)
+            try:
+                for key in box.iterkeys():
+                    index_message(search, box.get_bytes(key, from_=False), args.index_attachments)
+            finally:
+                box.close()
+        search.commit()
+    finally:
+        search.close()
+    os.replace(temporary, archive / "search.sqlite3")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--archive", required=True, help="canonical archive directory")
@@ -298,6 +318,7 @@ def main() -> int:
     ingest_parser.add_argument("--owner-names-file", required=True)
     ingest_parser.add_argument("--clamav", action="store_true", required=True, help="scan new messages with on-demand ClamAV")
     ingest_parser.add_argument("--workers", type=int, default=min(os.cpu_count() or 1, 8), help="concurrent ClamAV scans (default: cores, capped at 8)")
+    ingest_parser.add_argument("--index-attachments", action="store_true", help="index text attachments; non-text attachments require the planned Tika extractor")
     ingest_parser.add_argument("roots", nargs="+", metavar="ROOT")
     ingest_parser.set_defaults(function=ingest)
     review_parser = commands.add_parser("review")
@@ -307,6 +328,9 @@ def main() -> int:
     report_parser.add_argument("--year", help="year or inclusive year range, for example 2016 or 2010-2020")
     report_parser.add_argument("--top", type=int, default=DEFAULT_REPORT_TOP, help="top senders and recipients to show (default: 10; use 0 to suppress)")
     report_parser.set_defaults(function=report)
+    refresh_parser = commands.add_parser("refresh-index")
+    refresh_parser.add_argument("--index-attachments", action="store_true", help="include text attachments; non-text attachments require the planned Tika extractor")
+    refresh_parser.set_defaults(function=refresh_index)
     args = parser.parse_args()
     try:
         args.function(args)

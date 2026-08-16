@@ -67,6 +67,12 @@ The archive directory contains:
 * `archive.sqlite3`, the ingest catalog and observation log; and
 * `search.sqlite3`, a separately rebuildable FTS5 index.
 
+The default index contains normalized headers and message body text only:
+`text/plain` when available, otherwise rendered `text/html`.  It excludes
+attachments, MIME structure, and base64 payloads.  Use `--index-attachments`
+to include text attachments.  PDF and Office attachment extraction is planned
+through an optional Apache Tika installation.
+
 One or more source roots belong at the end of `ingest`; rerunning the same
 input records new observations but does not rescan or copy an already archived
 message with the same normalized `Message-ID` and raw SHA-256.
@@ -120,6 +126,16 @@ uv run mailarchiver --archive /path/to/mail-archive report
 uv run mailarchiver --archive /path/to/mail-archive report --year 2016 --top 20
 uv run mailarchiver --archive /path/to/mail-archive report --year 2010-2020 --top 50
 ```
+
+## Rebuild the search index
+
+After upgrading from the earlier raw-MIME index, rebuild the disposable index:
+
+```console
+uv run mailarchiver --archive /path/to/mail-archive refresh-index
+```
+
+Add `--index-attachments` only when text attachments should be searchable.
 
 ## Test
 
