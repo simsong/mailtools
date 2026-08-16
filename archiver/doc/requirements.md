@@ -82,7 +82,9 @@ requirement.
   stopped without silently treating the message as archived.
 * Completed and interrupted ingests print the archive report.  Reports always
   include year totals and default to the top 10 senders and recipients for the
-  selected scope; `--top 0` suppresses correspondent lists.
+  selected scope.  Addresses identified by Sent classification are suppressed
+  from these correspondent lists only; they remain in the catalog and yearly
+  people counts.  `--top 0` suppresses correspondent lists.
 * ClamAV outcomes are `clean`, `infected`, `unscannable`, or `scanner-error`,
   with scanner version, signature database version, and diagnostic retained.
 * Only a positive detection routes a message to `INFECTED.mbox`; an
@@ -118,8 +120,9 @@ recipient role and header order are intentionally not retained.
 message SHA-256, normalized headers, `text/plain` body text when present,
 otherwise rendered `text/html`, otherwise safe single-part message text.  It
 does not index attachment bytes by default.  `--index-attachments` enables
-text attachment indexing; binary attachment extraction is a separately
-configured capability.  It must be fully rebuildable from the
+text attachment indexing.  Binary attachment extraction is a separately
+configured, opt-in capability using Apache Tika; the Tika JAR is installed
+locally and checksum-verified, never run as a service.  It must be fully rebuildable from the
 canonical MBOX files and `archive.sqlite3`, and is not backed up as a required
 preservation object.
 

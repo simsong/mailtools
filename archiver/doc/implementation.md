@@ -68,7 +68,9 @@ checked-in three-message MBOX and three-message EMLX acceptance corpus.
 
 Successful ingests also print the archive report after finalization.  The
 report shows per-year totals plus the top 10 senders and recipients by default;
-`report --top 0` suppresses those lists.
+addresses identified by a `Sent` message are filtered from correspondent lists
+only, not from stored metadata or yearly people totals.  `report --top 0`
+suppresses those lists.
 
 `ingest --workers N` defaults to `min(os.cpu_count(), 8)`.  The source reader
 hashes and performs duplicate admission serially; admitted messages enter a
@@ -117,8 +119,11 @@ keys.  Its FTS5 table includes an unindexed `sha256` column plus searchable
 headers and selected body text: `text/plain` first, otherwise rendered
 `text/html`, otherwise a safe single-part fallback.  Attachment bytes are
 excluded by default.  `--index-attachments` currently includes text
-attachments only; Apache Tika is the planned optional extractor for PDF and
-Office attachments.  Rebuild it in a temporary database,
+attachments only.  The Makefile's `install-mac` and `install-linux` targets
+download Apache Tika's checksum-verified application JAR to the ignored
+project-local `.tools/tika/<version>/` directory; Tika remains an optional
+future extractor for PDF and Office attachments, not a service.  Rebuild the
+index in a temporary database,
 validate row identities against `archive.sqlite3`, then atomically replace the
 old search database.
 

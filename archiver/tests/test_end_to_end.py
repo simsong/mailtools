@@ -157,10 +157,20 @@ def test_rerun_is_idempotent_and_reviewable(source_mail: tuple[Path, dict[str, b
 
 
 def test_report_counts_years_people_and_correspondents(source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path) -> None:
+    """Requirement: owner addresses are catalogued but omitted from top correspondents."""
     source, _ = source_mail
     archive = tmp_path / "archive"
     owner_names = Path(__file__).parents[1] / "owner-names.txt"
     assert_success(run_ingest(source, archive, owner_names))
+    catalog = sqlite3.connect(archive / "archive.sqlite3")
+    try:
+        catalog.execute(
+            "INSERT OR IGNORE INTO recipients(message_pk, address_pk) "
+            "SELECT message_pk, sender_address_pk FROM messages WHERE category = 'Sent'"
+        )
+        catalog.commit()
+    finally:
+        catalog.close()
 
     result = subprocess.run(
         [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "report", "--year", "2024", "--top", "2"],
@@ -172,6 +182,7 @@ def test_report_counts_years_people_and_correspondents(source_mail: tuple[Path, 
     assert "year\tsent\treceived\tpeople\n2024\t1\t3\t3" in result.stdout
     assert "top senders\nsender@example.net\t3" in result.stdout
     assert "top recipients\nrecipient@example.net\t4" in result.stdout
+    assert "simsong@example.com" not in result.stdout
 
 
 def test_interrupt_stops_cleanly(source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path) -> None:

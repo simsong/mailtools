@@ -275,13 +275,34 @@ def print_report(archive: Path, years: tuple[int, int] | None, top: int | None) 
             print(f"{year}\t{sent}\t{received}\t{people}")
         if top is not None and top > 0:
             heading = lambda text: f"\033[1m{text}\033[0m" if sys.stdout.isatty() else text
+            owner_addresses = (
+                "owner_addresses AS (SELECT DISTINCT sender_address_pk FROM messages WHERE category = 'Sent') "
+            )
             print()
             print(heading("top senders"))
-            for address, count in catalog.execute("SELECT email_addresses.address, COUNT(*) FROM messages JOIN email_addresses ON email_addresses.address_pk = messages.sender_address_pk" + clause + " GROUP BY email_addresses.address ORDER BY COUNT(*) DESC, email_addresses.address LIMIT ?", (*parameters, top)):
+            for address, count in catalog.execute(
+                "WITH relevant AS (SELECT * FROM messages" + clause + "), "
+                + owner_addresses
+                + "SELECT email_addresses.address, COUNT(*) FROM relevant "
+                "JOIN email_addresses ON email_addresses.address_pk = relevant.sender_address_pk "
+                "LEFT JOIN owner_addresses ON owner_addresses.sender_address_pk = relevant.sender_address_pk "
+                "WHERE owner_addresses.sender_address_pk IS NULL "
+                "GROUP BY email_addresses.address ORDER BY COUNT(*) DESC, email_addresses.address LIMIT ?",
+                (*parameters, top),
+            ):
                 print(f"{address}\t{count}")
             print()
             print(heading("top recipients"))
-            for address, count in catalog.execute("SELECT email_addresses.address, COUNT(*) FROM recipients JOIN messages USING (message_pk) JOIN email_addresses USING (address_pk)" + clause + " GROUP BY email_addresses.address ORDER BY COUNT(*) DESC, email_addresses.address LIMIT ?", (*parameters, top)):
+            for address, count in catalog.execute(
+                "WITH relevant AS (SELECT * FROM messages" + clause + "), "
+                + owner_addresses
+                + "SELECT email_addresses.address, COUNT(*) FROM recipients "
+                "JOIN relevant USING (message_pk) JOIN email_addresses USING (address_pk) "
+                "LEFT JOIN owner_addresses ON owner_addresses.sender_address_pk = email_addresses.address_pk "
+                "WHERE owner_addresses.sender_address_pk IS NULL "
+                "GROUP BY email_addresses.address ORDER BY COUNT(*) DESC, email_addresses.address LIMIT ?",
+                (*parameters, top),
+            ):
                 print(f"{address}\t{count}")
     finally:
         catalog.close()

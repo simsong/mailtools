@@ -22,6 +22,32 @@ uv sync
 
 Run the project command with `uv run mailarchiver`.
 
+### Optional Apache Tika
+
+Apache Tika will be used for opt-in extraction from binary attachments such as
+PDF and Office files.  It is not a daemon and is not needed for normal mail
+ingest or body-only search.  The current `--index-attachments` option indexes
+text attachments; binary attachment extraction will be added in a later
+change.
+
+Tika requires Java 17 or newer.  The following installs the current supported
+Tika application JAR into this checkout's ignored `.tools/` directory and
+verifies Apache's published SHA-512 checksum; it does not install a service or
+schedule any work:
+
+```console
+make install-mac
+# or, on Linux:
+make install-linux
+```
+
+The installer uses `TIKA_VERSION=3.3.2`.  To install a later Apache release
+explicitly, set that variable after checking its release notes and checksum:
+
+```console
+make install-mac TIKA_VERSION=X.Y.Z
+```
+
 ## Ingest local mail
 
 The following command recursively reads MBOX and `.emlx` files below
@@ -78,7 +104,7 @@ input records new observations but does not rescan or copy an already archived
 message with the same normalized `Message-ID` and raw SHA-256.
 
 After a completed or interrupted ingest, mailarchiver prints the archive
-report: yearly sent/received/people totals and the 20 most frequent senders
+report: yearly sent/received/people totals and the 10 most frequent senders
 and recipients.
 
 During ingest, a heartbeat is written to standard error immediately, every two
@@ -118,7 +144,8 @@ uv run mailarchiver --archive /path/to/mail-archive review --run 1
 `report` reads only `archive.sqlite3`.  It lists each year with the number of
 sent and received messages and the number of distinct email addresses
 appearing as a sender or recipient.  It also lists the top 10 senders and
-recipients for the selected scope.  `--year` accepts one year or an inclusive
+recipients for the selected scope, excluding the archive owner's addresses.
+Addresses remain in the database and in the yearly `people` count.  `--year` accepts one year or an inclusive
 range; `--top N` changes the number of names (`--top 0` suppresses them).
 
 ```console
