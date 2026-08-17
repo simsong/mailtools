@@ -100,7 +100,9 @@ content.  It tracks at least:
 
 * logical message identity: raw and normalized Message-ID, message SHA-256,
   date and date source, category, byte length, ClamAV result;
-* parsed sender and recipient address foreign keys, and decoded Subject;
+* parsed sender and recipient address foreign keys, and decoded/unfolded
+  Subject headers; malformed header encoding falls back safely without
+  affecting preservation;
 * each final MBOX filename, message byte offset, byte length, and archive
   generation; and
 * sources, ingest runs, exclusions, duplicates, validation results, and
@@ -125,6 +127,26 @@ configured, opt-in capability using Apache Tika; the Tika JAR is installed
 locally and checksum-verified, never run as a service.  It must be fully rebuildable from the
 canonical MBOX files and `archive.sqlite3`, and is not backed up as a required
 preservation object.
+
+`mailsearch` is a read-only command-line consumer of both databases.  It
+accepts ordinary full-text terms plus `to:ADDRESS` recipient, `from:ADDRESS`
+sender, `subject:TEXT`, `date:YYYY-MM-DD`, `before:YYYY-MM-DD`, and
+`after:YYYY-MM-DD` filters, intersecting every supplied term. `date:` selects
+the specified UTC calendar day; `before:` and `after:` exclude the specified
+day. Results default to ten
+one-line headers, prefixed by the stable `messages.message_pk`; `--limit 0`
+prints all matches.  Supplying one such number prints the original RFC 5322
+message bytes from canonical MBOX storage.  The current implementation finds
+that message by SHA-256 scan until generation-specific MBOX locations exist.
+It decodes/unfolds historical RFC 2047 subject values while printing, so an
+older catalog remains readable without rewriting canonical MBOX files.
+Within one result set, message numbers are right-aligned to that set's widest
+number. Interactive terminals render subjects in ANSI bold; redirected output
+contains no terminal control codes.
+
+All archive commands use `MAIL_ARCHIVE_DIR` as their default archive directory.
+`--archive DIRECTORY` overrides that environment variable. If neither is set,
+the command fails before reading or writing an archive.
 
 ## Ingest sources
 
@@ -165,6 +187,6 @@ preservation object.
 The first release is a local command-line normalizer and verifier.  Its TOML
 configuration holds archive and scanner policy; `owner-names.txt` remains a
 separate, one-name-per-line reusable classification input.  A local
-special-purpose search and message-viewing interface is a planned consumer of
+special-purpose search and message-viewing interface is a consumer of
 the two SQLite databases, not a reason to depend on Thunderbird or FoxTrot.
 No source mailbox is modified by this program.

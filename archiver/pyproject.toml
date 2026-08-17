@@ -10,6 +10,7 @@ dependencies = [
 
 [project.scripts]
 mailarchiver = "mailarchiver.__main__:main"
+mailsearch = "mailarchiver.mailsearch:main"
 
 [build-system]
 requires = ["setuptools>=69"]

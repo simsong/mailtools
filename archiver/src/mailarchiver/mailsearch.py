@@ -1,0 +1,226 @@
+"""Read-only Apple Mail-style search over a mailarchiver archive."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import mailbox
+import shutil
+import sqlite3
+import sys
+import textwrap
+from datetime import date as CalendarDate, timedelta
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+from .archive_path import add_archive_argument, require_archive
+from .message import decoded_header
+
+DEFAULT_LIMIT = 10
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+
+class SearchTerms(BaseModel):
+    """Structured selectors and free-text terms accepted by mailsearch."""
+
+    to: list[str] = Field(default_factory=list)
+    from_: list[str] = Field(default_factory=list)
+    subject: list[str] = Field(default_factory=list)
+    date: list[CalendarDate] = Field(default_factory=list)
+    before: list[CalendarDate] = Field(default_factory=list)
+    after: list[CalendarDate] = Field(default_factory=list)
+    text: list[str] = Field(default_factory=list)
+
+
+class MessageHeader(BaseModel):
+    message_pk: int
+    recipients: str
+    sender: str
+    subject: str
+    date_utc: str
+
+
+def parse_terms(tokens: list[str]) -> SearchTerms:
+    terms = SearchTerms()
+    for token in tokens:
+        key, separator, value = token.partition(":")
+        key = key.lower()
+        if separator and key in {"to", "from", "subject", "date", "before", "after"}:
+            if not value:
+                raise ValueError(f"{key}: requires a value")
+            if key in {"date", "before", "after"}:
+                try:
+                    getattr(terms, key).append(CalendarDate.fromisoformat(value))
+                except ValueError as error:
+                    raise ValueError(f"{key}: requires a YYYY-MM-DD date") from error
+            else:
+                getattr(terms, "from_" if key == "from" else key).append(value.casefold())
+        else:
+            terms.text.append(token)
+    return terms
+
+
+def fts_query(words: list[str]) -> str:
+    return " AND ".join(f'"{word.replace(chr(34), "")}"' for word in words)
+
+
+def contains(value: str) -> str:
+    return "%" + value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def search_headers(archive: Path, terms: SearchTerms, limit: int) -> list[MessageHeader]:
+    catalog_path, search_path = archive / "archive.sqlite3", archive / "search.sqlite3"
+    if not catalog_path.is_file() or not search_path.is_file():
+        raise ValueError(f"{archive} must contain archive.sqlite3 and search.sqlite3")
+    database = sqlite3.connect(f"file:{catalog_path}?mode=ro", uri=True)
+    try:
+        database.execute("ATTACH DATABASE ? AS search", (f"file:{search_path}?mode=ro",))
+        clauses: list[str] = []
+        parameters: list[str | int] = []
+        for address in terms.to:
+            clauses.append(
+                "EXISTS (SELECT 1 FROM recipients r JOIN email_addresses a ON a.address_pk = r.address_pk "
+                "WHERE r.message_pk = m.message_pk AND lower(a.address) LIKE ? ESCAPE '\\')"
+            )
+            parameters.append(contains(address))
+        for address in terms.from_:
+            clauses.append("lower(sender.address) LIKE ? ESCAPE '\\'")
+            parameters.append(contains(address))
+        for subject in terms.subject:
+            clauses.append("lower(m.subject) LIKE ? ESCAPE '\\'")
+            parameters.append(contains(subject))
+        for selected_date in terms.date:
+            clauses.append("m.date_utc >= ? AND m.date_utc < ?")
+            parameters.extend((selected_date.isoformat() + "T00:00:00+00:00", (selected_date + timedelta(days=1)).isoformat() + "T00:00:00+00:00"))
+        for selected_date in terms.before:
+            clauses.append("m.date_utc < ?")
+            parameters.append(selected_date.isoformat() + "T00:00:00+00:00")
+        for selected_date in terms.after:
+            clauses.append("m.date_utc >= ?")
+            parameters.append((selected_date + timedelta(days=1)).isoformat() + "T00:00:00+00:00")
+        if terms.text:
+            clauses.append("m.sha256 IN (SELECT sha256 FROM search.message_fts WHERE message_fts MATCH ?)")
+            parameters.append(fts_query(terms.text))
+        query = (
+            "SELECT m.message_pk, COALESCE(group_concat(DISTINCT recipient.address), ''), sender.address, m.subject, m.date_utc "
+            "FROM messages m JOIN email_addresses sender ON sender.address_pk = m.sender_address_pk "
+            "LEFT JOIN recipients r ON r.message_pk = m.message_pk "
+            "LEFT JOIN email_addresses recipient ON recipient.address_pk = r.address_pk "
+            + ("WHERE " + " AND ".join(clauses) + " " if clauses else "")
+            + "GROUP BY m.message_pk ORDER BY m.date_utc DESC, m.message_pk DESC "
+            + ("" if limit == 0 else "LIMIT ?")
+        )
+        if limit:
+            parameters.append(limit)
+        return [MessageHeader.model_validate(dict(zip(("message_pk", "recipients", "sender", "subject", "date_utc"), row))) for row in database.execute(query, parameters)]
+    finally:
+        database.close()
+
+
+def print_message(archive: Path, message_pk: int) -> None:
+    database = sqlite3.connect(f"file:{archive / 'archive.sqlite3'}?mode=ro", uri=True)
+    try:
+        row = database.execute("SELECT sha256 FROM messages WHERE message_pk = ?", (message_pk,)).fetchone()
+    finally:
+        database.close()
+    if row is None:
+        raise ValueError(f"no message numbered {message_pk}")
+    target = row[0]
+    for path in archive.glob("*.mbox"):
+        box = mailbox.mbox(path, factory=None, create=False)
+        try:
+            for key in box.iterkeys():
+                raw = box.get_bytes(key, from_=False)
+                if hashlib.sha256(raw).hexdigest() == target:
+                    sys.stdout.buffer.write(raw)
+                    return
+        finally:
+            box.close()
+    raise ValueError(f"message {message_pk} is catalogued but not found in canonical MBOX files")
+
+
+def format_header(result: MessageHeader, number_width: int, styled: bool) -> str:
+    """Format a one-line result, emphasizing the subject only for terminals."""
+    subject = decoded_header(result.subject)
+    if styled:
+        subject = f"{BOLD}{subject}{RESET}"
+    return f"{result.message_pk:>{number_width}} to:{result.recipients} from:{result.sender} subject:{subject} date:{result.date_utc}"
+
+
+def terminal_width() -> int:
+    return max(40, shutil.get_terminal_size(fallback=(80, 24)).columns - 2)
+
+
+def search_epilog() -> str:
+    width = terminal_width()
+    selectors = (
+        ("to:ADDRESS", "recipient address"),
+        ("from:ADDRESS", "sender address"),
+        ("subject:TEXT", "subject text"),
+        ("date:YYYY-MM-DD", "messages on that UTC calendar day"),
+        ("before:YYYY-MM-DD", "messages before that UTC calendar day"),
+        ("after:YYYY-MM-DD", "messages after that UTC calendar day"),
+    )
+    selector_lines = [textwrap.fill(f"  {key:<21} {description}", width=width, subsequent_indent=" " * 23) for key, description in selectors]
+    examples = (
+        "  mailsearch to:alice@example.com budget",
+        "  mailsearch --limit 0 after:2024-01-01",
+        "  mailsearch --archive OTHER_ARCHIVE 42",
+    )
+    return "\n\n".join(
+        (
+            textwrap.fill("Ordinary words search indexed headers and message text. Every term is ANDed.", width=width),
+            "Search selectors:\n" + "\n".join(selector_lines),
+            textwrap.fill("A sole message number prints its original RFC 5322 message.", width=width),
+            "Examples:\n" + "\n".join(examples),
+        )
+    )
+
+
+class TerminalHelpFormatter(argparse.HelpFormatter):
+    """Wrap help to the current terminal width, including the search syntax."""
+
+    def __init__(self, prog: str) -> None:
+        super().__init__(prog, width=terminal_width())
+
+    def _fill_text(self, text: str, width: int, indent: str) -> str:
+        return "\n".join(indent + line for line in text.splitlines())
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="mailsearch",
+        description="Read-only search of a mailarchiver archive.",
+        epilog=search_epilog(),
+        formatter_class=TerminalHelpFormatter,
+    )
+    add_archive_argument(parser, "directory containing archive.sqlite3 and search.sqlite3")
+    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="maximum matches to print; 0 prints all (default: 10)")
+    parser.add_argument("terms", nargs="*", metavar="SEARCH")
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    args.archive = require_archive(parser, args.archive)
+    if args.limit < 0:
+        raise SystemExit("mailsearch: --limit must be zero or positive")
+    if len(args.terms) == 1 and args.terms[0].isdigit():
+        print_message(args.archive, int(args.terms[0]))
+        return 0
+    try:
+        terms = parse_terms(args.terms)
+        results = search_headers(args.archive, terms, args.limit)
+        number_width = max((len(str(result.message_pk)) for result in results), default=1)
+        for result in results:
+            print(format_header(result, number_width, sys.stdout.isatty()))
+    except ValueError as error:
+        raise SystemExit(f"mailsearch: {error}") from error
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,4 +1,4 @@
-.PHONY: check run test install-mac install-linux install-tika
+.PHONY: check run search test test-mailsearch test-headers install-mac install-linux install-tika
 
 TIKA_VERSION ?= 3.3.2
 TIKA_DIR ?= $(CURDIR)/.tools/tika/$(TIKA_VERSION)
@@ -11,8 +11,17 @@ check: test
 run:
 	uv run mailarchiver $(ARGS)
 
+search:
+	uv run mailsearch $(ARGS)
+
 test:
 	uv run pytest -q
+
+test-mailsearch:
+	uv run pytest -q tests/test_mailsearch.py
+
+test-headers:
+	uv run pytest -q tests/test_message.py tests/test_search.py
 
 install-mac:
 	@test "$$(uname -s)" = Darwin || { echo "install-mac must run on macOS"; exit 1; }

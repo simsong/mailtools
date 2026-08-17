@@ -10,6 +10,7 @@ from email.parser import BytesParser
 
 from bs4 import BeautifulSoup
 
+from .message import decoded_header
 
 def decoded_part(part: Message) -> str:
     payload = part.get_payload(decode=True) or b""
@@ -26,7 +27,7 @@ def is_attachment(part: Message) -> bool:
 def message_text(raw: bytes, index_attachments: bool) -> str:
     """Return headers plus preferred body text; omit attachments unless requested."""
     message = BytesParser(policy=policy.compat32).parsebytes(raw)
-    headers = "\n".join(str(message.get(name) or "") for name in ("From", "To", "Cc", "Subject", "Date"))
+    headers = "\n".join(decoded_header(str(message.get(name) or "")) for name in ("From", "To", "Cc", "Subject", "Date"))
     parts = list(message.walk()) if message.is_multipart() else [message]
     plain = [decoded_part(part) for part in parts if part.get_content_type() == "text/plain" and not is_attachment(part)]
     html = [decoded_part(part) for part in parts if part.get_content_type() == "text/html" and not is_attachment(part)]

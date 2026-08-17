@@ -17,6 +17,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .archive_path import add_archive_argument, require_archive
 from .catalog import address_pk, create_catalog, create_search, owner_tokens
 from .message import ParsedMessage, parse_message
 from .mbox import DiskFullError, add_message, mailbox_name, write_manifests
@@ -333,7 +334,7 @@ def refresh_index(args: argparse.Namespace) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--archive", required=True, help="canonical archive directory")
+    add_archive_argument(parser, "canonical archive directory")
     commands = parser.add_subparsers(dest="command", required=True)
     ingest_parser = commands.add_parser("ingest")
     ingest_parser.add_argument("--owner-names-file", required=True)
@@ -353,6 +354,7 @@ def main() -> int:
     refresh_parser.add_argument("--index-attachments", action="store_true", help="include text attachments; non-text attachments require the planned Tika extractor")
     refresh_parser.set_defaults(function=refresh_index)
     args = parser.parse_args()
+    args.archive = require_archive(parser, args.archive)
     try:
         args.function(args)
     except KeyboardInterrupt:

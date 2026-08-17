@@ -51,7 +51,8 @@ The first implementation supports recursive local MBOX, `.eml`, Maildir, and
 deduplication, autosave exclusion, Date/Received/path-year date fallback, a temporary on-demand `clamd`,
 `INFECTED1.mbox`, SQLite catalog/FTS files, SHA-256 MBOX manifests,
 per-run observation review, and year/correspondent reports.  The top-level
-`--archive` option selects the archive for every command; `ingest` takes one
+`MAIL_ARCHIVE_DIR` selects the archive for every command by default; the
+`--archive` option overrides it. `ingest` takes one
 or more source roots as positional arguments and `--owner-names-file` selects
 the reusable owner-token list.  Ingest currently requires `--clamav`: it starts
 a foreground daemon only when no healthy configured socket is available, then
@@ -79,7 +80,19 @@ MBOX records and SQLite rows in source order after scan completion.
 
 Rollover, date sorting/repacking, byte-offset locations, complete recipient
 metadata, resilient transactions/recovery, `verify`, `refresh-index`, richer
-text extraction, IMAP, Gmail, and the local search UI remain planned work.
+text extraction, IMAP, Gmail, and a graphical local search UI remain planned
+work.  The delivered `mailsearch` command reads both databases without writing:
+it applies `to:`/`from:`/`subject:` catalog filters, UTC calendar-day
+`date:`/`before:`/`after:` filters, and ANDed FTS5 terms; it prints stable
+`message_pk` header lines and scans canonical MBOX files by SHA-256 only when
+asked to print one numbered message.  The scan is correct but intentionally
+temporary until byte-offset locations are implemented.
+
+Header parsing decodes and unfolds RFC 2047 Subject values before catalog and
+FTS insertion. `mailsearch` also decodes its displayed catalog value, keeping
+pre-existing catalogs readable without a destructive archive rewrite.
+Its result formatter determines number width from the returned `message_pk`
+values and emits ANSI bold only for a terminal subject field.
 
 Use `uv` for dependencies and every test/run target through the repository
 Makefile.  Typed Pydantic structures carry all message metadata and external

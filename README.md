@@ -3,6 +3,11 @@ Right now, this git repository is where we are developing code to
 process and analyze mail.
 
 ## What's here?
+* [archiver](archiver/) -- Byte-preserving personal MBOX archiver with a
+  rebuildable SQLite search index.
+* [gmail_deduplicate](gmail_deduplicate/) -- OAuth Gmail cleanup utility for
+  Apple Mail's `X-Apple-Auto-Saved` messages.  This tool deletes remote mail;
+  see its safety notes before running it.
 * [misc](misc/) -- Miscellaneous tools, including:
   * The [autoresponder.py](misc/autoresponder.py).
   * [imaptool.py(misc/imaptool.py) --- for

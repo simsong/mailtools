@@ -22,6 +22,15 @@ uv sync
 
 Run the project command with `uv run mailarchiver`.
 
+Set the archive directory once for the shell session:
+
+```console
+export MAIL_ARCHIVE_DIR=/path/to/mail-archive
+```
+
+Every `mailarchiver` and `mailsearch` command below uses this value. Pass
+`--archive DIRECTORY` before the command to override it for one invocation.
+
 ### Optional Apache Tika
 
 Apache Tika will be used for opt-in extraction from binary attachments such as
@@ -70,13 +79,13 @@ startup or scan errors stop the current ingest rather than silently treating
 mail as clean.  A positive detection is retained in `INFECTED1.mbox`.
 
 ```console
-uv run mailarchiver --archive /path/to/mail-archive ingest --owner-names-file owner-names.txt --clamav /path/to/source-mail
+uv run mailarchiver ingest --owner-names-file owner-names.txt --clamav /path/to/source-mail
 ```
 
 For example, with the project's supplied owner-token list and a new archive:
 
 ```console
-uv run mailarchiver --archive "$HOME/arch-local/normalized-mail" ingest --owner-names-file owner-names.txt --clamav "$HOME/arch-local/SLG Mail"
+MAIL_ARCHIVE_DIR="$HOME/arch-local/normalized-mail" uv run mailarchiver ingest --owner-names-file owner-names.txt --clamav "$HOME/arch-local/SLG Mail"
 ```
 
 ClamAV scan workers default to the CPU count, capped at eight.  Override the
@@ -136,7 +145,7 @@ selector it prints all observations.  Use `--run` only to restrict the output
 to one numbered ingest run:
 
 ```console
-uv run mailarchiver --archive /path/to/mail-archive review --run 1
+uv run mailarchiver review --run 1
 ```
 
 ## Report archive contents
@@ -149,9 +158,9 @@ Addresses remain in the database and in the yearly `people` count.  `--year` acc
 range; `--top N` changes the number of names (`--top 0` suppresses them).
 
 ```console
-uv run mailarchiver --archive /path/to/mail-archive report
-uv run mailarchiver --archive /path/to/mail-archive report --year 2016 --top 20
-uv run mailarchiver --archive /path/to/mail-archive report --year 2010-2020 --top 50
+uv run mailarchiver report
+uv run mailarchiver report --year 2016 --top 20
+uv run mailarchiver report --year 2010-2020 --top 50
 ```
 
 ## Rebuild the search index
@@ -159,10 +168,32 @@ uv run mailarchiver --archive /path/to/mail-archive report --year 2010-2020 --to
 After upgrading from the earlier raw-MIME index, rebuild the disposable index:
 
 ```console
-uv run mailarchiver --archive /path/to/mail-archive refresh-index
+uv run mailarchiver refresh-index
 ```
 
 Add `--index-attachments` only when text attachments should be searchable.
+
+## Search mail
+
+`mailsearch` is a read-only search command.  Ordinary words search indexed
+headers and body text. `to:` filters recipient addresses, `from:` filters
+senders, and `subject:` filters subjects. `date:YYYY-MM-DD` selects a UTC
+calendar day, while `before:` and `after:` select strictly earlier or later
+mail. Supplied terms are combined with AND. The default is ten results;
+`--limit 0` prints every match.  Each result starts with its stable message
+number, which can be supplied alone to print the original message. Numbers
+align to the widest returned value; interactive terminals render subjects in
+bold, while redirected output remains plain text.
+
+```console
+uv run mailsearch to:alice@example.com budget
+uv run mailsearch subject:invoice after:2024-01-01
+uv run mailsearch 42
+```
+
+Use `uv run mailsearch --help` for the complete syntax.  Printing a message
+currently scans canonical MBOX files by its recorded SHA-256; it does not alter
+the archive.
 
 ## Test
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime, timezone
+from email.header import decode_header
 from email import policy
 from email.parser import BytesParser
 from email.utils import getaddresses, parseaddr, parsedate_to_datetime
@@ -51,6 +52,25 @@ def received_date(values: list[str]) -> datetime | None:
     return min(dates) if dates else None
 
 
+def decoded_header(value: str) -> str:
+    """Decode RFC 2047 encoded words without letting malformed metadata drop mail."""
+    unfolded = re.sub(r"\r?\n[ \t]+", " ", value)
+    try:
+        parts = decode_header(unfolded)
+    except (TypeError, ValueError):
+        return unfolded
+    decoded: list[str] = []
+    for part, charset in parts:
+        if isinstance(part, str):
+            decoded.append(part)
+            continue
+        try:
+            decoded.append(part.decode(charset or "utf-8", "replace"))
+        except (LookupError, UnicodeError):
+            decoded.append(part.decode("utf-8", "replace"))
+    return "".join(decoded)
+
+
 def parse_message(raw: bytes, path: Path, prior_date: datetime | None) -> ParsedMessage:
     message = BytesParser(policy=policy.compat32).parsebytes(raw)
     digest = hashlib.sha256(raw).hexdigest()
@@ -76,7 +96,7 @@ def parse_message(raw: bytes, path: Path, prior_date: datetime | None) -> Parsed
         sha256=digest,
         sender=sender,
         recipients=recipients,
-        subject=str(message.get("Subject") or ""),
+        subject=decoded_header(str(message.get("Subject") or "")),
         date_utc=date.isoformat(),
         date_source=date_source,
         autosave=message.get("X-Apple-Auto-Saved") is not None,
