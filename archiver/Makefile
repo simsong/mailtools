@@ -1,4 +1,4 @@
-.PHONY: check run search test test-mailsearch test-headers install-mac install-linux install-tika
+.PHONY: check pylint run search test test-mailsearch test-headers install-mac install-linux install-tika
 
 TIKA_VERSION ?= 3.3.2
 TIKA_DIR ?= $(CURDIR)/.tools/tika/$(TIKA_VERSION)
@@ -7,6 +7,9 @@ TIKA_SHA512 := $(TIKA_JAR).sha512
 TIKA_URL := https://downloads.apache.org/tika/$(TIKA_VERSION)/tika-app-$(TIKA_VERSION).jar
 
 check: test
+
+pylint:
+	uv run pylint src tests
 
 run:
 	uv run mailarchiver $(ARGS)

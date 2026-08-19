@@ -31,6 +31,19 @@ def create_catalog(path: Path) -> sqlite3.Connection:
             address_pk INTEGER NOT NULL REFERENCES email_addresses(address_pk),
             PRIMARY KEY (message_pk, address_pk)
         );
+        CREATE TABLE IF NOT EXISTS mbox_generations (
+            generation_pk INTEGER PRIMARY KEY,
+            filename TEXT NOT NULL UNIQUE,
+            sha256 TEXT NOT NULL,
+            message_count INTEGER NOT NULL,
+            byte_count INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS locations (
+            message_pk INTEGER PRIMARY KEY REFERENCES messages(message_pk),
+            generation_pk INTEGER NOT NULL REFERENCES mbox_generations(generation_pk),
+            byte_offset INTEGER NOT NULL,
+            byte_length INTEGER NOT NULL
+        );
         """
     )
     migrate_addresses(database)
@@ -38,6 +51,7 @@ def create_catalog(path: Path) -> sqlite3.Connection:
         """
         CREATE INDEX IF NOT EXISTS messages_sender_address_pk ON messages(sender_address_pk);
         CREATE INDEX IF NOT EXISTS recipients_address_pk ON recipients(address_pk);
+        CREATE INDEX IF NOT EXISTS locations_generation_pk ON locations(generation_pk);
         """
     )
     return database

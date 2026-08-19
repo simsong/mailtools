@@ -10,7 +10,7 @@ from os import environ
 from pathlib import Path
 
 from mailarchiver.catalog import address_pk, create_catalog, create_search
-from mailarchiver.mailsearch import MessageHeader, format_header
+from mailarchiver.mailsearch import MessageHeader, format_header, render_message
 from mailarchiver.search import index_message
 
 
@@ -18,7 +18,7 @@ def make_archive(tmp_path: Path) -> tuple[Path, bytes]:
     archive = tmp_path / "archive"
     archive.mkdir()
     raw = (
-        b"Message-ID: <one@example>\nFrom: sender@example.net\nTo: recipient@example.net\n"
+        b"Message-ID: <one@example>\nFrom: sender@example.net\nTo: recipient@example.net\nCc: copy@example.net\nX-Trace: one\n"
         b"Subject: planning meeting\nDate: Wed, 03 Jan 2024 10:00:00 +0000\n\nMeeting agenda.\n"
     )
     catalog = create_catalog(archive / "archive.sqlite3")
@@ -43,6 +43,10 @@ def make_archive(tmp_path: Path) -> tuple[Path, bytes]:
         box.flush()
     finally:
         box.close()
+    refreshed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"], capture_output=True, text=True, check=False
+    )
+    assert refreshed.returncode == 0, refreshed.stderr
     return archive, raw
 
 
@@ -70,7 +74,55 @@ def test_mailsearch_limit_zero_and_number_print_original_message(tmp_path: Path)
         [sys.executable, "-m", "mailarchiver.mailsearch", "--archive", str(archive), "1"], capture_output=True, check=False
     )
     assert displayed.returncode == 0, displayed.stderr
+    assert displayed.stdout == render_message(raw, False, False).encode()
+
+
+def test_message_views_select_headers_and_preferred_mime_parts() -> None:
+    """Requirement: display defaults to text/plain, supports HTML, and exposes full headers on request."""
+    raw = (
+        b"From: sender@example.net\nTo: recipient@example.net\nSubject: test\nX-Trace: retained\n"
+        b"Content-Type: multipart/alternative; boundary=part\n\n--part\nContent-Type: text/plain; charset=utf-8\n\nPlain text\n"
+        b"--part\nContent-Type: text/html; charset=utf-8\n\n<p>HTML text</p>\n--part--\n"
+    )
+    assert "Plain text" in render_message(raw, False, False)
+    assert "HTML text" not in render_message(raw, False, False)
+    assert "<p>HTML text</p>" in render_message(raw, False, True)
+    assert "X-Trace: retained" in render_message(raw, True, False)
+    html_only = raw.replace(b"Content-Type: text/plain; charset=utf-8\n\nPlain text\n", b"")
+    assert "HTML text" in render_message(html_only, False, False)
+
+
+def test_mailsearch_mime_outputs_original_source(tmp_path: Path) -> None:
+    """Requirement: --mime returns all original MIME parts and headers unchanged."""
+    archive, raw = make_archive(tmp_path)
+    displayed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver.mailsearch", "--archive", str(archive), "--mime", "1"], capture_output=True, check=False
+    )
+    assert displayed.returncode == 0, displayed.stderr
     assert displayed.stdout == raw
+
+
+def test_refresh_locations_rebuilds_direct_numbered_lookup(tmp_path: Path) -> None:
+    """Requirement: a rebuilt location maps a message number directly to preserved RFC 5322 bytes."""
+    archive, raw = make_archive(tmp_path)
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        catalog.execute("DELETE FROM locations")
+        catalog.commit()
+    finally:
+        catalog.close()
+    missing = run_search("--archive", str(archive), "1")
+    assert missing.returncode != 0
+    assert "run mailarchiver refresh-locations" in missing.stderr
+    assert "Traceback" not in missing.stderr
+    refreshed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"], capture_output=True, check=False
+    )
+    assert refreshed.returncode == 0, refreshed.stderr
+    displayed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver.mailsearch", "--archive", str(archive), "1"], capture_output=True, check=False
+    )
+    assert displayed.stdout == render_message(raw, False, False).encode()
 
 
 def test_mailsearch_help_describes_syntax() -> None:
@@ -101,6 +153,26 @@ def test_mailsearch_decodes_legacy_catalog_subjects(tmp_path: Path) -> None:
     finally:
         catalog.close()
     assert "subject:Re: Roasted Cauliflower" in run_search("--archive", str(archive)).stdout
+
+
+def test_refresh_subjects_rewrites_legacy_catalog_values(tmp_path: Path) -> None:
+    """Requirement: refresh-subjects replaces historical encoded catalog text from canonical MBOX mail."""
+    archive, _ = make_archive(tmp_path)
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        catalog.execute("UPDATE messages SET subject = ?", ("=?utf-8?B?UmU6IFJvYXN0ZWQgQ2F1bGlmbG93ZXI=?=",))
+        catalog.commit()
+    finally:
+        catalog.close()
+    refreshed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-subjects"], capture_output=True, text=True, check=False
+    )
+    assert refreshed.returncode == 0, refreshed.stderr
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        assert catalog.execute("SELECT subject FROM messages").fetchone() == ("planning meeting",)
+    finally:
+        catalog.close()
 
 
 def test_mailsearch_formats_dynamic_numbers_and_terminal_subjects() -> None:

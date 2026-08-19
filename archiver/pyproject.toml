@@ -20,8 +20,11 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pylint>=3.3", "pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.pylint."messages control"]
+disable = ["C", "R", "W", "no-member"]

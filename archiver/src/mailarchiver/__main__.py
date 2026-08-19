@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import mailbox
 import re
@@ -13,14 +14,16 @@ import time
 from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from .archive_path import add_archive_argument, require_archive
 from .catalog import address_pk, create_catalog, create_search, owner_tokens
-from .message import ParsedMessage, parse_message
-from .mbox import DiskFullError, add_message, mailbox_name, write_manifests
+from .message import ParsedMessage, decoded_header, parse_message
+from .mbox import DiskFullError, MboxLocation, add_message, mailbox_name, read_location, write_manifests
 from .scanner import ClamScanner
 from .search import index_message
 from .sources import SourceMessage, source_messages
@@ -168,7 +171,17 @@ def ingest(args: argparse.Namespace) -> None:
         if box is None:
             box = mailbox.mbox(mbox_path, create=True)
             boxes[mbox_path] = box
-        add_message(box, mbox_path, raw)
+        location = add_message(box, mbox_path, raw)
+        generation = catalog.execute(
+            "INSERT INTO mbox_generations(filename, sha256, message_count, byte_count) VALUES (?, '', 0, 0) "
+            "ON CONFLICT(filename) DO UPDATE SET filename = excluded.filename RETURNING generation_pk",
+            (mbox_path.name,),
+        ).fetchone()
+        assert generation is not None
+        catalog.execute(
+            "INSERT INTO locations(message_pk, generation_pk, byte_offset, byte_length) VALUES (?, ?, ?, ?)",
+            (message_pk, generation[0], location.byte_offset, location.byte_length),
+        )
         index_message(search, raw, args.index_attachments)
         catalog.execute("INSERT INTO observations(run_pk, message_pk, source_path, disposition, detail) VALUES (?, ?, ?, ?, ?)", (run_pk, message_pk, str(path), "archived", category))
         catalog.commit()
@@ -332,6 +345,89 @@ def refresh_index(args: argparse.Namespace) -> None:
     os.replace(temporary, archive / "search.sqlite3")
 
 
+def refresh_subjects(args: argparse.Namespace) -> None:
+    """Rebuild human-readable catalog subjects from canonical MBOX bytes."""
+    archive = Path(args.archive)
+    catalog = create_catalog(archive / "archive.sqlite3")
+    updated = 0
+    try:
+        catalog.execute("BEGIN")
+        for path in sorted(archive.glob("*.mbox")):
+            box = mailbox.mbox(path, factory=None, create=False)
+            try:
+                for key in box.iterkeys():
+                    raw = box.get_bytes(key, from_=False)
+                    digest = hashlib.sha256(raw).hexdigest()
+                    parsed = BytesParser(policy=policy.compat32).parsebytes(raw)
+                    subject = decoded_header(str(parsed.get("Subject") or ""))
+                    result = catalog.execute("UPDATE messages SET subject = ? WHERE sha256 = ?", (subject, digest))
+                    if result.rowcount != 1:
+                        raise ValueError(f"MBOX message has no unique catalog row: {path}")
+                    updated += 1
+            finally:
+                box.close()
+        catalog.commit()
+        print(f"refreshed {updated} catalog subjects")
+    except BaseException:
+        catalog.rollback()
+        raise
+    finally:
+        catalog.close()
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def refresh_locations(args: argparse.Namespace) -> None:
+    """Rebuild direct MBOX locations from canonical files without changing them."""
+    archive = Path(args.archive)
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        catalog.execute("BEGIN")
+        catalog.execute("DELETE FROM locations")
+        catalog.execute("DELETE FROM mbox_generations")
+        located: set[int] = set()
+        for path in sorted(archive.glob("*.mbox")):
+            box = mailbox.mbox(path, factory=None, create=False)
+            try:
+                offsets = [box._lookup(key) for key in box.iterkeys()]
+            finally:
+                box.close()
+            generation = catalog.execute(
+                "INSERT INTO mbox_generations(filename, sha256, message_count, byte_count) VALUES (?, ?, ?, ?) RETURNING generation_pk",
+                (path.name, file_sha256(path), len(offsets), path.stat().st_size),
+            ).fetchone()
+            assert generation is not None
+            for start, stop in offsets:
+                raw = read_location(path, MboxLocation(byte_offset=start, byte_length=stop - start))
+                row = catalog.execute("SELECT message_pk FROM messages WHERE sha256 = ?", (hashlib.sha256(raw).hexdigest(),)).fetchone()
+                if row is None:
+                    raise ValueError(f"MBOX message missing from catalog: {path} at byte {start}")
+                message_pk = int(row[0])
+                if message_pk in located:
+                    raise ValueError(f"duplicate canonical MBOX location for message {message_pk}")
+                located.add(message_pk)
+                catalog.execute(
+                    "INSERT INTO locations(message_pk, generation_pk, byte_offset, byte_length) VALUES (?, ?, ?, ?)",
+                    (message_pk, generation[0], start, stop - start),
+                )
+        missing = catalog.execute("SELECT message_pk FROM messages EXCEPT SELECT message_pk FROM locations").fetchall()
+        if missing:
+            raise ValueError(f"catalogue messages missing canonical MBOX locations: {len(missing)}")
+        catalog.commit()
+        print(f"rebuilt {len(located)} MBOX locations")
+    except BaseException:
+        catalog.rollback()
+        raise
+    finally:
+        catalog.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     add_archive_argument(parser, "canonical archive directory")
@@ -353,6 +449,10 @@ def main() -> int:
     refresh_parser = commands.add_parser("refresh-index")
     refresh_parser.add_argument("--index-attachments", action="store_true", help="include text attachments; non-text attachments require the planned Tika extractor")
     refresh_parser.set_defaults(function=refresh_index)
+    subjects_parser = commands.add_parser("refresh-subjects")
+    subjects_parser.set_defaults(function=refresh_subjects)
+    locations_parser = commands.add_parser("refresh-locations")
+    locations_parser.set_defaults(function=refresh_locations)
     args = parser.parse_args()
     args.archive = require_archive(parser, args.archive)
     try:

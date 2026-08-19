@@ -4,18 +4,23 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import mailbox
 import shutil
 import sqlite3
 import sys
 import textwrap
 from datetime import date as CalendarDate, timedelta
+from email import policy
+from email.message import Message
+from email.parser import BytesParser
 from pathlib import Path
 
+from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
 from .archive_path import add_archive_argument, require_archive
 from .message import decoded_header
+from .mbox import MboxLocation, read_location
+from .search import decoded_part, is_attachment
 
 DEFAULT_LIMIT = 10
 BOLD = "\033[1m"
@@ -119,26 +124,54 @@ def search_headers(archive: Path, terms: SearchTerms, limit: int) -> list[Messag
         database.close()
 
 
-def print_message(archive: Path, message_pk: int) -> None:
+def rendered_headers(message: Message, full: bool) -> str:
+    headers = message.items() if full else [(name, message.get(name)) for name in ("To", "From", "Cc", "Subject", "Date")]
+    return "\n".join(f"{name}: {decoded_header(str(value))}" for name, value in headers if value is not None)
+
+
+def text_parts(message: Message, content_type: str) -> list[str]:
+    parts = message.walk() if message.is_multipart() else [message]
+    return [decoded_part(part) for part in parts if part.get_content_type() == content_type and not is_attachment(part)]
+
+
+def render_message(raw: bytes, full_headers: bool, html: bool) -> str:
+    """Render selected headers and a user-readable preferred message part."""
+    message = BytesParser(policy=policy.compat32).parsebytes(raw)
+    headers = rendered_headers(message, full_headers)
+    plain = text_parts(message, "text/plain")
+    html_parts = text_parts(message, "text/html")
+    if html:
+        body = "\n\n".join(html_parts)
+    elif plain:
+        body = "\n\n".join(plain)
+    else:
+        body = "\n\n".join(BeautifulSoup(part, "html.parser").get_text(" ", strip=True) for part in html_parts)
+    return headers + ("\n\n" + body.rstrip("\n") if body else "") + "\n"
+
+
+def print_message(archive: Path, message_pk: int, full_headers: bool, html: bool, mime: bool) -> None:
     database = sqlite3.connect(f"file:{archive / 'archive.sqlite3'}?mode=ro", uri=True)
     try:
-        row = database.execute("SELECT sha256 FROM messages WHERE message_pk = ?", (message_pk,)).fetchone()
+        row = database.execute(
+            "SELECT messages.sha256, mbox_generations.filename, locations.byte_offset, locations.byte_length "
+            "FROM messages LEFT JOIN locations USING (message_pk) "
+            "LEFT JOIN mbox_generations USING (generation_pk) WHERE message_pk = ?",
+            (message_pk,),
+        ).fetchone()
     finally:
         database.close()
     if row is None:
         raise ValueError(f"no message numbered {message_pk}")
-    target = row[0]
-    for path in archive.glob("*.mbox"):
-        box = mailbox.mbox(path, factory=None, create=False)
-        try:
-            for key in box.iterkeys():
-                raw = box.get_bytes(key, from_=False)
-                if hashlib.sha256(raw).hexdigest() == target:
-                    sys.stdout.buffer.write(raw)
-                    return
-        finally:
-            box.close()
-    raise ValueError(f"message {message_pk} is catalogued but not found in canonical MBOX files")
+    target, filename, offset, length = row
+    if filename is None:
+        raise ValueError(f"message {message_pk} has no MBOX location; run mailarchiver refresh-locations")
+    raw = read_location(archive / filename, MboxLocation(byte_offset=offset, byte_length=length))
+    if hashlib.sha256(raw).hexdigest() != target:
+        raise ValueError(f"MBOX location hash mismatch for message {message_pk}")
+    if mime:
+        sys.stdout.buffer.write(raw)
+    else:
+        sys.stdout.write(render_message(raw, full_headers, html))
 
 
 def format_header(result: MessageHeader, number_width: int, styled: bool) -> str:
@@ -173,7 +206,7 @@ def search_epilog() -> str:
         (
             textwrap.fill("Ordinary words search indexed headers and message text. Every term is ANDed.", width=width),
             "Search selectors:\n" + "\n".join(selector_lines),
-            textwrap.fill("A sole message number prints its original RFC 5322 message.", width=width),
+            textwrap.fill("A sole message number prints selected headers and the preferred text part. Use --headers, --html, or --mime for alternate views.", width=width),
             "Examples:\n" + "\n".join(examples),
         )
     )
@@ -198,6 +231,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_archive_argument(parser, "directory containing archive.sqlite3 and search.sqlite3")
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="maximum matches to print; 0 prints all (default: 10)")
+    parser.add_argument("--headers", action="store_true", help="with a message number, show all headers")
+    view = parser.add_mutually_exclusive_group()
+    view.add_argument("--html", action="store_true", help="with a message number, print decoded text/html parts")
+    view.add_argument("--mime", action="store_true", help="with a message number, print the full RFC 5322/MIME source")
     parser.add_argument("terms", nargs="*", metavar="SEARCH")
     return parser
 
@@ -208,10 +245,10 @@ def main() -> int:
     args.archive = require_archive(parser, args.archive)
     if args.limit < 0:
         raise SystemExit("mailsearch: --limit must be zero or positive")
-    if len(args.terms) == 1 and args.terms[0].isdigit():
-        print_message(args.archive, int(args.terms[0]))
-        return 0
     try:
+        if len(args.terms) == 1 and args.terms[0].isdigit():
+            print_message(args.archive, int(args.terms[0]), args.headers, args.html, args.mime)
+            return 0
         terms = parse_terms(args.terms)
         results = search_headers(args.archive, terms, args.limit)
         number_width = max((len(str(result.message_pk)) for result in results), default=1)

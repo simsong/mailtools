@@ -83,7 +83,7 @@ def test_ingest_routes_preserves_and_indexes_messages(
     assert_success(result)
     assert "completed:" in result.stderr
     assert "processed=6" in result.stderr
-    assert "progress:" in result.stderr
+    assert "started:" in result.stderr
     assert "file=" in result.stderr
     assert "seen_skipped=" in result.stderr
     assert "year\tsent\treceived\tpeople" in result.stdout
@@ -100,6 +100,7 @@ def test_ingest_routes_preserves_and_indexes_messages(
     catalog = sqlite3.connect(archive / "archive.sqlite3")
     try:
         assert catalog.execute("SELECT count(*) FROM messages").fetchone() == (4,)
+        assert catalog.execute("SELECT count(*) FROM locations").fetchone() == (4,)
         assert catalog.execute("SELECT count(*) FROM observations").fetchone() == (6,)
         assert catalog.execute(
             "SELECT date_source FROM messages WHERE message_id_normalized = 'infected@example'"

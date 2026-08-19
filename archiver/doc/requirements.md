@@ -137,12 +137,25 @@ day. Results default to ten
 one-line headers, prefixed by the stable `messages.message_pk`; `--limit 0`
 prints all matches.  Supplying one such number prints the original RFC 5322
 message bytes from canonical MBOX storage.  The current implementation finds
-that message by SHA-256 scan until generation-specific MBOX locations exist.
+that message through a catalogued generation-specific MBOX location and
+verifies the recovered bytes against its SHA-256 before printing. New ingests
+record locations; `refresh-locations` rebuilds them from existing canonical
+MBOX files without modifying message bytes.
 It decodes/unfolds historical RFC 2047 subject values while printing, so an
 older catalog remains readable without rewriting canonical MBOX files.
+`refresh-subjects` rewrites older `messages.subject` values from canonical
+MBOX data so the catalog itself retains decoded, human-readable subjects.
+Run `refresh-index` afterward to normalize historical FTS header content too.
 Within one result set, message numbers are right-aligned to that set's widest
 number. Interactive terminals render subjects in ANSI bold; redirected output
 contains no terminal control codes.
+
+For a numbered message, the default display shows `To`, `From`, `Cc`,
+`Subject`, and `Date` headers plus all non-attachment `text/plain` parts. If
+no plain-text part exists, it renders non-attachment `text/html` parts to
+plain text with Beautiful Soup. `--headers` includes every header; `--html`
+prints decoded HTML parts; `--mime` prints the original RFC 5322/MIME source,
+including all MIME parts and attachment encodings.
 
 All archive commands use `MAIL_ARCHIVE_DIR` as their default archive directory.
 `--archive DIRECTORY` overrides that environment variable. If neither is set,
@@ -179,7 +192,9 @@ the command fails before reading or writing an archive.
 * A `verify` command is strictly read-only: it reparses every canonical MBOX,
   checks manifests, offsets, and database rows, and reports duplicate-policy
   violations.
-* `refresh-index` rebuilds the disposable FTS database.  `review` queries the
+* `refresh-index` rebuilds the disposable FTS database. `refresh-subjects`
+  rebuilds decoded catalog subjects from canonical MBOX files. `refresh-locations`
+  rebuilds catalogued MBOX offsets from canonical MBOX files. `review` queries the
   committed source-observation log by run, source, and disposition.
 
 ## Scope boundaries

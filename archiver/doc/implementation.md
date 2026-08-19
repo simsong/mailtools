@@ -79,20 +79,32 @@ bounded queue of at most `2N` concurrent ClamAV scans.  A single writer emits
 MBOX records and SQLite rows in source order after scan completion.
 
 Rollover, date sorting/repacking, byte-offset locations, complete recipient
-metadata, resilient transactions/recovery, `verify`, `refresh-index`, richer
+metadata, resilient transactions/recovery, `verify`, richer
 text extraction, IMAP, Gmail, and a graphical local search UI remain planned
 work.  The delivered `mailsearch` command reads both databases without writing:
 it applies `to:`/`from:`/`subject:` catalog filters, UTC calendar-day
 `date:`/`before:`/`after:` filters, and ANDed FTS5 terms; it prints stable
-`message_pk` header lines and scans canonical MBOX files by SHA-256 only when
-asked to print one numbered message.  The scan is correct but intentionally
-temporary until byte-offset locations are implemented.
+`message_pk` header lines and reads a numbered message directly from its
+catalogued MBOX byte location, validating its SHA-256 before output.
+
+`locations` and `mbox_generations` are created directly when absent; no schema
+version migration is required at this stage. Ingest records an appended
+message's MBOX offsets. `refresh-locations` rebuilds locations transactionally
+from canonical MBOX files for a pre-existing archive.
 
 Header parsing decodes and unfolds RFC 2047 Subject values before catalog and
 FTS insertion. `mailsearch` also decodes its displayed catalog value, keeping
 pre-existing catalogs readable without a destructive archive rewrite.
+`refresh-subjects` backfills human-readable `messages.subject` values from
+canonical MBOX bytes for an existing archive.
 Its result formatter determines number width from the returned `message_pk`
 values and emits ANSI bold only for a terminal subject field.
+
+Numbered-message display parses the verified raw bytes with the standard
+library email parser. It renders the principal headers and prefers
+non-attachment `text/plain` parts; it uses Beautiful Soup when only HTML is
+available. `--headers`, `--html`, and `--mime` select full headers, decoded
+HTML parts, and exact original MIME source respectively.
 
 Use `uv` for dependencies and every test/run target through the repository
 Makefile.  Typed Pydantic structures carry all message metadata and external

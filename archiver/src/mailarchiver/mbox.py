@@ -9,11 +9,18 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from .message import ParsedMessage
 
 
 class DiskFullError(RuntimeError):
     """The archive cannot safely accept another message."""
+
+
+class MboxLocation(BaseModel):
+    byte_offset: int
+    byte_length: int
 
 
 def mailbox_name(parsed: ParsedMessage, category: str) -> str:
@@ -22,13 +29,15 @@ def mailbox_name(parsed: ParsedMessage, category: str) -> str:
     return f"{datetime.fromisoformat(parsed.date_utc).year}-{category}1.mbox"
 
 
-def add_message(box: mailbox.mbox, path: Path, raw: bytes) -> None:
+def add_message(box: mailbox.mbox, path: Path, raw: bytes) -> MboxLocation:
     prior_size = path.stat().st_size if path.exists() else 0
     if shutil.disk_usage(path.parent).free < len(raw) + 1024 * 1024:
         raise DiskFullError(f"insufficient free space before writing {path}")
     try:
-        box.add(raw)
+        key = box.add(raw)
         box.flush()
+        start, stop = box._lookup(key)
+        return MboxLocation(byte_offset=start, byte_length=stop - start)
     except OSError as error:
         if error.errno != errno.ENOSPC:
             raise
@@ -36,6 +45,17 @@ def add_message(box: mailbox.mbox, path: Path, raw: bytes) -> None:
         with path.open("r+b") as destination:
             destination.truncate(prior_size)
         raise DiskFullError(f"disk full while writing {path}") from error
+
+
+def read_location(path: Path, location: MboxLocation) -> bytes:
+    """Read one mboxrd record directly and restore its RFC 5322 message bytes."""
+    with path.open("rb") as source:
+        source.seek(location.byte_offset)
+        record = source.read(location.byte_length)
+    envelope, separator, raw = record.partition(b"\n")
+    if not separator or not envelope.startswith(b"From "):
+        raise ValueError(f"invalid MBOX location in {path}")
+    return raw.replace(b"\n>From ", b"\nFrom ")
 
 
 def write_manifests(archive: Path) -> None:

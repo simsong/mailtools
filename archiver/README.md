@@ -189,11 +189,37 @@ bold, while redirected output remains plain text.
 uv run mailsearch to:alice@example.com budget
 uv run mailsearch subject:invoice after:2024-01-01
 uv run mailsearch 42
+uv run mailsearch --headers 42
+uv run mailsearch --html 42
+uv run mailsearch --mime 42
 ```
 
-Use `uv run mailsearch --help` for the complete syntax.  Printing a message
-currently scans canonical MBOX files by its recorded SHA-256; it does not alter
-the archive.
+Use `uv run mailsearch --help` for the complete syntax. A numbered message
+normally displays the main headers and `text/plain` body; `--headers` shows
+all headers, `--html` shows decoded HTML, and `--mime` shows its original MIME
+source. Printing uses its catalogued MBOX location and verifies its recorded
+SHA-256; it does not alter canonical message bytes.
+
+To replace MIME-encoded historical catalog subjects with human-readable
+values, run:
+
+```console
+uv run mailarchiver refresh-subjects
+uv run mailarchiver refresh-index
+```
+
+The second command rebuilds FTS headers with the same decoded values.
+
+### Rebuild numbered-message locations
+
+After upgrading an existing archive, create its direct MBOX locations once:
+
+```console
+uv run mailarchiver refresh-locations
+```
+
+This updates `archive.sqlite3` from canonical MBOX files and verifies every
+location by SHA-256. It does not modify source mail or canonical MBOX bytes.
 
 ## Test
 
