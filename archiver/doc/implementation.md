@@ -215,6 +215,9 @@ for a run when needed and stops it after the run unless an operator has
 already started it.  `clamscan` remains a diagnostic fallback.  Neither an
 on-access scanner, a login service, nor a scheduled scan is enabled.  Run
 `freshclam` only when an operator explicitly wants new signatures.
+`MAILARCHIVER_CLAMD`, `MAILARCHIVER_CLAMDSCAN`, `MAILARCHIVER_CLAMD_CONFIG`,
+and `MAILARCHIVER_CLAMD_SOCKET` override the macOS Homebrew defaults for a
+separately configured local environment such as CI.
 
 MIME traversal and extraction are bounded by configured size, recursion,
 time, and decompression limits.  Plain text and rendered HTML are indexed

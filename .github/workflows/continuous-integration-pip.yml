@@ -5,6 +5,11 @@ on: [push, pull_request]
 jobs:
   archiver:
     runs-on: ubuntu-latest
+    env:
+      MAILARCHIVER_CLAMD: /usr/sbin/clamd
+      MAILARCHIVER_CLAMDSCAN: /usr/bin/clamdscan
+      MAILARCHIVER_CLAMD_CONFIG: ${{ runner.temp }}/mailarchiver-clamav/clamd.conf
+      MAILARCHIVER_CLAMD_SOCKET: ${{ runner.temp }}/mailarchiver-clamav/clamd.sock
     defaults:
       run:
         working-directory: archiver
@@ -17,6 +22,17 @@ jobs:
           python-version: "3.12"
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
+      - name: Install ClamAV
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clamav-daemon
+          sudo freshclam
+          mkdir -p "${RUNNER_TEMP}/mailarchiver-clamav"
+          printf '%s\n' \
+            'DatabaseDirectory /var/lib/clamav' \
+            "LocalSocket ${MAILARCHIVER_CLAMD_SOCKET}" \
+            "PidFile ${RUNNER_TEMP}/mailarchiver-clamav/clamd.pid" \
+            > "${MAILARCHIVER_CLAMD_CONFIG}"
       - name: Install dependencies
         run: uv sync --all-groups
       - name: Check

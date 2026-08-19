@@ -10,10 +10,10 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 
 
-CLAMD = "/opt/homebrew/sbin/clamd"
-CLAMDSCAN = "/opt/homebrew/bin/clamdscan"
-CLAMD_CONFIG = "/opt/homebrew/etc/clamav/clamd.conf"
-CLAMD_SOCKET = Path("/private/tmp/clamd.sock")
+CLAMD = os.environ.get("MAILARCHIVER_CLAMD", "/opt/homebrew/sbin/clamd")
+CLAMDSCAN = os.environ.get("MAILARCHIVER_CLAMDSCAN", "/opt/homebrew/bin/clamdscan")
+CLAMD_CONFIG = os.environ.get("MAILARCHIVER_CLAMD_CONFIG", "/opt/homebrew/etc/clamav/clamd.conf")
+CLAMD_SOCKET = Path(os.environ.get("MAILARCHIVER_CLAMD_SOCKET", "/private/tmp/clamd.sock"))
 CLAMD_START_TIMEOUT_SECONDS = 120
 
 

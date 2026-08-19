@@ -72,6 +72,9 @@ written to a normal MBOX.  If no healthy daemon is listening, mailarchiver
 starts one foreground daemon for this ingest only, reusing its loaded
 signatures, and stops it afterward.  If a healthy local daemon already owns
 the socket, mailarchiver uses it and leaves it running.
+`MAILARCHIVER_CLAMD`, `MAILARCHIVER_CLAMDSCAN`,
+`MAILARCHIVER_CLAMD_CONFIG`, and `MAILARCHIVER_CLAMD_SOCKET` override the
+macOS Homebrew defaults for another local environment, including CI.
 
 This option does **not** enable on-access scanning, a login service, or a
 scheduled scan.  It requires a configured ClamAV signature database; scanner
