@@ -21,6 +21,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes clamav-daemon
+          sudo systemctl stop clamav-daemon clamav-freshclam
           sudo freshclam
           mkdir -p "${RUNNER_TEMP}/mailarchiver-clamav"
           {
