@@ -5,11 +5,6 @@ on: [push, pull_request]
 jobs:
   archiver:
     runs-on: ubuntu-latest
-    env:
-      MAILARCHIVER_CLAMD: /usr/sbin/clamd
-      MAILARCHIVER_CLAMDSCAN: /usr/bin/clamdscan
-      MAILARCHIVER_CLAMD_CONFIG: ${{ runner.temp }}/mailarchiver-clamav/clamd.conf
-      MAILARCHIVER_CLAMD_SOCKET: ${{ runner.temp }}/mailarchiver-clamav/clamd.sock
     defaults:
       run:
         working-directory: archiver
@@ -28,11 +23,17 @@ jobs:
           sudo apt-get install --yes clamav-daemon
           sudo freshclam
           mkdir -p "${RUNNER_TEMP}/mailarchiver-clamav"
+          {
+            echo 'MAILARCHIVER_CLAMD=/usr/sbin/clamd'
+            echo 'MAILARCHIVER_CLAMDSCAN=/usr/bin/clamdscan'
+            echo "MAILARCHIVER_CLAMD_CONFIG=${RUNNER_TEMP}/mailarchiver-clamav/clamd.conf"
+            echo "MAILARCHIVER_CLAMD_SOCKET=${RUNNER_TEMP}/mailarchiver-clamav/clamd.sock"
+          } >> "${GITHUB_ENV}"
           printf '%s\n' \
             'DatabaseDirectory /var/lib/clamav' \
-            "LocalSocket ${MAILARCHIVER_CLAMD_SOCKET}" \
+            "LocalSocket ${RUNNER_TEMP}/mailarchiver-clamav/clamd.sock" \
             "PidFile ${RUNNER_TEMP}/mailarchiver-clamav/clamd.pid" \
-            > "${MAILARCHIVER_CLAMD_CONFIG}"
+            > "${RUNNER_TEMP}/mailarchiver-clamav/clamd.conf"
       - name: Install dependencies
         run: uv sync --all-groups
       - name: Check
