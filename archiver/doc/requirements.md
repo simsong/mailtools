@@ -122,7 +122,8 @@ recipient role and header order are intentionally not retained.
 `search.sqlite3` is a separate, disposable SQLite FTS5 database.  It indexes
 message SHA-256, normalized headers, `text/plain` body text when present,
 otherwise rendered `text/html`, otherwise safe single-part message text.  It
-does not index attachment bytes by default.  `--index-attachments` enables
+parses XML-looking content declared as `text/html` with the same forgiving HTML
+rules without emitting parser diagnostics.  It does not index attachment bytes by default.  `--index-attachments` enables
 text attachment indexing.  Binary attachment extraction is a separately
 configured, opt-in capability using Apache Tika; the Tika JAR is installed
 locally and checksum-verified, never run as a service.  It must be fully rebuildable from the

@@ -14,13 +14,12 @@ from email.message import Message
 from email.parser import BytesParser
 from pathlib import Path
 
-from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
 
 from .archive_path import add_archive_argument, require_archive
 from .message import decoded_header
 from .mbox import MboxLocation, read_location
-from .search import decoded_part, is_attachment
+from .search import decoded_part, html_text, is_attachment
 
 DEFAULT_LIMIT = 10
 BOLD = "\033[1m"
@@ -145,7 +144,7 @@ def render_message(raw: bytes, full_headers: bool, html: bool) -> str:
     elif plain:
         body = "\n\n".join(plain)
     else:
-        body = "\n\n".join(BeautifulSoup(part, "html.parser").get_text(" ", strip=True) for part in html_parts)
+        body = "\n\n".join(html_text(part) for part in html_parts)
     return headers + ("\n\n" + body.rstrip("\n") if body else "") + "\n"
 
 

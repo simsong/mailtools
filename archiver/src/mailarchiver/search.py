@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+import warnings
 from email import policy
 from email.message import Message
 from email.parser import BytesParser
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from .message import decoded_header
 
@@ -24,6 +25,13 @@ def is_attachment(part: Message) -> bool:
     return part.get_content_disposition() == "attachment" or part.get_filename() is not None
 
 
+def html_text(value: str) -> str:
+    """Render email HTML, including XML-looking XHTML declared as text/html."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+        return BeautifulSoup(value, "html.parser").get_text(" ", strip=True)
+
+
 def message_text(raw: bytes, index_attachments: bool) -> str:
     """Return headers plus preferred body text; omit attachments unless requested."""
     message = BytesParser(policy=policy.compat32).parsebytes(raw)
@@ -34,7 +42,7 @@ def message_text(raw: bytes, index_attachments: bool) -> str:
     if plain:
         body = "\n".join(plain)
     elif html:
-        body = "\n".join(BeautifulSoup(part, "html.parser").get_text(" ", strip=True) for part in html)
+        body = "\n".join(html_text(part) for part in html)
     elif not message.is_multipart() and not is_attachment(message):
         body = decoded_part(message)
     else:

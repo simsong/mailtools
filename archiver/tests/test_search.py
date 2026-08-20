@@ -1,5 +1,9 @@
 """Requirements: FTS indexes preferred body text, excluding attachments by default."""
 
+import warnings
+
+from bs4 import XMLParsedAsHTMLWarning
+
 from mailarchiver.search import message_text
 
 
@@ -31,3 +35,20 @@ def test_plain_body_wins_and_attachment_requires_opt_in() -> None:
     assert "html body" not in default
     assert "attachment words" not in default
     assert "attachment words" in message_text(raw, index_attachments=True)
+
+
+def test_xml_looking_html_is_rendered_without_parser_warning() -> None:
+    """Requirement: text/html remains best-effort derived content even when it resembles XML."""
+    raw = b"\n".join(
+        [
+            b"Content-Type: text/html; charset=utf-8",
+            b"",
+            b'<?xml version="1.0"?><html><body><p>message body</p></body></html>',
+        ]
+    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        rendered = message_text(raw, index_attachments=False)
+
+    assert "message body" in rendered
+    assert not any(item.category is XMLParsedAsHTMLWarning for item in caught)

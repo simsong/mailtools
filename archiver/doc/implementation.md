@@ -105,7 +105,9 @@ and recipient fields, are converted to text before metadata parsing.
 Numbered-message display parses the verified raw bytes with the standard
 library email parser. It renders the principal headers and prefers
 non-attachment `text/plain` parts; it uses Beautiful Soup when only HTML is
-available. `--headers`, `--html`, and `--mime` select full headers, decoded
+available. XML-looking XHTML declared as `text/html` uses the forgiving HTML
+parser while locally suppressing only Beautiful Soup's XML-as-HTML warning.
+`--headers`, `--html`, and `--mime` select full headers, decoded
 HTML parts, and exact original MIME source respectively.
 
 Use `uv` for dependencies and every test/run target through the repository
