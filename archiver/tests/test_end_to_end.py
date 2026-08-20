@@ -126,6 +126,7 @@ def test_ingest_routes_preserves_and_indexes_messages(
         search.close()
     assert (archive / "2024-Archive1.mbox.sha256").is_file()
     assert (archive / "INFECTED1.mbox.sha256").is_file()
+    assert not (archive / ".mailarchiver-pending.json").exists()
 
 
 def test_rerun_is_idempotent_and_reviewable(source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path) -> None:

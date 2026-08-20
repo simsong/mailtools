@@ -86,6 +86,11 @@ requirement.
   An unexpected parser failure drains earlier queued messages, closes
   resources, refreshes manifests for committed MBOX changes, and leaves a
   rerunnable error observation containing the source offset and raw SHA-256.
+* Before each MBOX append, ingest durably records the target, prior length,
+  message identity, and whether the target already existed. Catalog and search
+  changes remain uncommitted until the append is complete. On an exception or
+  the next startup after process death, an uncommitted append and search row
+  are removed; a catalogued append is retained and its journal is cleared.
 * Completed and interrupted ingests print the archive report.  Reports always
   include year totals and default to the top 10 senders and recipients for the
   selected scope.  Addresses identified by Sent classification are suppressed

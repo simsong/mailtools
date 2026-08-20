@@ -23,7 +23,19 @@ from pydantic import BaseModel
 from .archive_path import add_archive_argument, require_archive
 from .catalog import address_pk, create_catalog, create_search, owner_tokens
 from .message import ParsedMessage, decoded_header, parse_message
-from .mbox import DiskFullError, MboxLocation, add_message, mailbox_name, read_location, write_manifests
+from .mbox import (
+    DiskFullError,
+    MboxLocation,
+    PendingPublication,
+    PublicationRecovery,
+    add_message,
+    clear_publication_journal,
+    journal_publication,
+    mailbox_name,
+    read_location,
+    recover_publication,
+    write_manifests,
+)
 from .scanner import ClamScanner
 from .search import index_message
 from .sources import SourceMessage, source_messages
@@ -155,6 +167,10 @@ def ingest(args: argparse.Namespace) -> None:
     archive = Path(args.archive)
     archive.mkdir(parents=True, exist_ok=True)
     catalog, search = create_catalog(archive / "archive.sqlite3"), create_search(archive / "search.sqlite3")
+    recovery = recover_publication(archive, catalog, search)
+    if recovery is not PublicationRecovery.NONE:
+        write_manifests(archive)
+        print(f"recovered: pending message publication {recovery.value}", file=sys.stderr)
     owners = owner_tokens(Path(args.owner_names_file))
     run_pk = catalog.execute("INSERT INTO ingest_runs(started_at) VALUES (?)", (datetime.now(timezone.utc).isoformat(),)).lastrowid
     catalog.commit()
@@ -178,29 +194,52 @@ def ingest(args: argparse.Namespace) -> None:
     def archive_scanned(candidate: PendingScan, infected: bool) -> None:
         raw, parsed = candidate.source.raw, candidate.parsed
         category = "INFECTED" if infected else ("Sent" if any(token in parsed.sender for token in owners) else "Archive")
-        sender_pk = address_pk(catalog, parsed.sender)
-        message_pk = catalog.execute("INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) VALUES (?, ?, ?, ?, ?, ?, ?)", (parsed.message_id, parsed.sha256, sender_pk, parsed.subject, parsed.date_utc, parsed.date_source, category)).lastrowid
-        catalog.executemany("INSERT INTO recipients(message_pk, address_pk) VALUES (?, ?)", ((message_pk, address_pk(catalog, address)) for address in parsed.recipients))
         mbox_path = archive / mailbox_name(parsed, category)
-        box = boxes.get(mbox_path)
-        if box is None:
-            box = mailbox.mbox(mbox_path, create=True)
-            boxes[mbox_path] = box
-        location = add_message(box, mbox_path, raw)
-        generation = catalog.execute(
-            "INSERT INTO mbox_generations(filename, sha256, message_count, byte_count) VALUES (?, '', 0, 0) "
-            "ON CONFLICT(filename) DO UPDATE SET filename = excluded.filename RETURNING generation_pk",
-            (mbox_path.name,),
-        ).fetchone()
-        assert generation is not None
-        catalog.execute(
-            "INSERT INTO locations(message_pk, generation_pk, byte_offset, byte_length) VALUES (?, ?, ?, ?)",
-            (message_pk, generation[0], location.byte_offset, location.byte_length),
+        file_existed = mbox_path.exists()
+        publication = PendingPublication(
+            filename=mbox_path.name,
+            prior_size=mbox_path.stat().st_size if mbox_path.exists() else 0,
+            file_existed=file_existed,
+            message_id=parsed.message_id,
+            sha256=parsed.sha256,
         )
-        index_message(search, raw, args.index_attachments)
-        observe(candidate.source, "archived", category, parsed.sha256, message_pk)
-        catalog.commit()
-        search.commit()
+        box: mailbox.mbox | None = None
+        try:
+            catalog.execute("BEGIN")
+            search.execute("BEGIN")
+            sender_pk = address_pk(catalog, parsed.sender)
+            message_pk = catalog.execute("INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) VALUES (?, ?, ?, ?, ?, ?, ?)", (parsed.message_id, parsed.sha256, sender_pk, parsed.subject, parsed.date_utc, parsed.date_source, category)).lastrowid
+            catalog.executemany("INSERT INTO recipients(message_pk, address_pk) VALUES (?, ?)", ((message_pk, address_pk(catalog, address)) for address in parsed.recipients))
+            index_message(search, raw, args.index_attachments)
+            box = boxes.get(mbox_path)
+            if box is None:
+                box = mailbox.mbox(mbox_path, create=True)
+                boxes[mbox_path] = box
+            journal_publication(archive, publication)
+            location = add_message(box, mbox_path, raw)
+            generation = catalog.execute(
+                "INSERT INTO mbox_generations(filename, sha256, message_count, byte_count) VALUES (?, '', 0, 0) "
+                "ON CONFLICT(filename) DO UPDATE SET filename = excluded.filename RETURNING generation_pk",
+                (mbox_path.name,),
+            ).fetchone()
+            assert generation is not None
+            catalog.execute(
+                "INSERT INTO locations(message_pk, generation_pk, byte_offset, byte_length) VALUES (?, ?, ?, ?)",
+                (message_pk, generation[0], location.byte_offset, location.byte_length),
+            )
+            observe(candidate.source, "archived", category, parsed.sha256, message_pk)
+            search.commit()
+            catalog.commit()
+            clear_publication_journal(archive)
+        except BaseException:
+            catalog.rollback()
+            search.rollback()
+            if box is not None:
+                box.close()
+                boxes.pop(mbox_path, None)
+            if recover_publication(archive, catalog, search) is not PublicationRecovery.NONE:
+                write_manifests(archive)
+            raise
         progress.record_disposition("archived")
         if category == "INFECTED":
             progress.record_disposition("infected")

@@ -29,6 +29,11 @@ and asserts exit 130, a controlled interruption report, and no traceback.
 message with no path-year fallback and checks the failed run result plus the
 error observation's source path, offset, raw SHA-256, and exception detail.
 
+`test_publication.py` simulates process death after an MBOX append and search
+commit but before catalog commit. Recovery must truncate exactly the orphaned
+record, delete its disposable search row, retain earlier bytes, and clear the
+durable journal.
+
 `test_message.py` checks earliest-valid-Received date fallback independently of
 the MBOX/ClamAV integration corpus.
 

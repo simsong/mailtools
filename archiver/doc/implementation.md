@@ -78,8 +78,7 @@ hashes and performs duplicate admission serially; admitted messages enter a
 bounded queue of at most `2N` concurrent ClamAV scans.  A single writer emits
 MBOX records and SQLite rows in source order after scan completion.
 
-Rollover, date sorting/repacking, byte-offset locations, complete recipient
-metadata, resilient transactions/recovery, `verify`, richer
+Rollover, date sorting/repacking, complete recipient metadata, `verify`, richer
 text extraction, IMAP, Gmail, and a graphical local search UI remain planned
 work.  The delivered `mailsearch` command reads both databases without writing:
 it applies `to:`/`from:`/`subject:` catalog filters, UTC calendar-day
@@ -178,11 +177,13 @@ For every candidate source record:
 5. Stream the raw message to ClamAV.  A positive result routes it to
    `INFECTED`; all other nonfatal outcomes retain it in its normal category
    while recording the result.
-6. Stage an mboxrd-encoded record in a same-filesystem run directory.  Record
-   enough staging metadata to resume safely after interruption.
-7. In one SQLite transaction, add the message, recipients, source observation,
-   scanner result, and staged location.  Publish the staged MBOX changes only
-   after their manifest and database state validate.
+6. Durably journal the target MBOX, its prior size/existence, and the message
+   identity, then append and flush the mboxrd-encoded raw bytes.
+7. Keep message, recipient, observation, location, and search rows in open
+   transactions until the append succeeds. Commit the disposable search row,
+   then the authoritative catalog, and clear the journal. An exception or the
+   next ingest startup truncates an uncatalogued append, removes its search
+   row, and refreshes manifests; a catalogued append is retained.
 
 Deduplication is deliberately before ClamAV: a known archived message has
 already been scanned and classified.  `--rescan` explicitly revisits stored
