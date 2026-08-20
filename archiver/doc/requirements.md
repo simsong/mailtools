@@ -101,8 +101,9 @@ content.  It tracks at least:
 * logical message identity: raw and normalized Message-ID, message SHA-256,
   date and date source, category, byte length, ClamAV result;
 * parsed sender and recipient address foreign keys, and decoded/unfolded
-  Subject headers; malformed header encoding falls back safely without
-  affecting preservation;
+  Subject headers; every parser-provided header value is normalized to text,
+  and malformed header encoding falls back safely without affecting
+  preservation;
 * each final MBOX filename, message byte offset, byte length, and archive
   generation; and
 * sources, ingest runs, exclusions, duplicates, validation results, and

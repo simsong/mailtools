@@ -47,8 +47,8 @@ def path_year(path: Path) -> int | None:
     return None
 
 
-def received_date(values: list[str]) -> datetime | None:
-    dates = [parsed for value in values if (parsed := parse_date(value.rsplit(";", 1)[-1].strip())) is not None]
+def received_date(values: list[object]) -> datetime | None:
+    dates = [parsed for value in values if (parsed := parse_date(str(value).rsplit(";", 1)[-1].strip())) is not None]
     return min(dates) if dates else None
 
 
@@ -76,9 +76,8 @@ def parse_message(raw: bytes, path: Path, prior_date: datetime | None) -> Parsed
     digest = hashlib.sha256(raw).hexdigest()
     message_id = str(message.get("Message-ID") or "").strip().strip("<>").lower() or digest
     sender = parseaddr(str(message.get("From") or ""))[1].lower()
-    recipients = sorted(
-        {address.lower() for _, address in getaddresses(message.get_all("To", []) + message.get_all("Cc", []) + message.get_all("Bcc", [])) if address}
-    )
+    recipient_headers = [str(value) for name in ("To", "Cc", "Bcc") for value in message.get_all(name, [])]
+    recipients = sorted({address.lower() for _, address in getaddresses(recipient_headers) if address})
     date = parse_date(str(message.get("Date")) if message.get("Date") else None)
     if date is not None:
         date_source = "date"

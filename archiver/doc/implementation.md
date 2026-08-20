@@ -99,6 +99,8 @@ pre-existing catalogs readable without a destructive archive rewrite.
 canonical MBOX bytes for an existing archive.
 Its result formatter determines number width from the returned `message_pk`
 values and emits ANSI bold only for a terminal subject field.
+Compatibility-policy header objects, including raw 8-bit legacy `Received:`
+and recipient fields, are converted to text before metadata parsing.
 
 Numbered-message display parses the verified raw bytes with the standard
 library email parser. It renders the principal headers and prefers
