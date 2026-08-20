@@ -87,8 +87,9 @@ it applies `to:`/`from:`/`subject:` catalog filters, UTC calendar-day
 `message_pk` header lines and reads a numbered message directly from its
 catalogued MBOX byte location, validating its SHA-256 before output.
 
-`locations` and `mbox_generations` are created directly when absent; no schema
-version migration is required at this stage. Ingest records an appended
+`locations` and `mbox_generations` are created directly when absent. Additive
+schema migration supplies run completion/result fields and observation source
+offset/SHA-256 fields to existing catalogs. Ingest records an appended
 message's MBOX offsets. `refresh-locations` rebuilds locations transactionally
 from canonical MBOX files for a pre-existing archive.
 
@@ -129,8 +130,8 @@ mbox_generations(generation_pk, filename, sha256, message_count, byte_count,
                  created_run, valid)
 locations(message_pk, generation_pk, byte_offset, byte_length)
 sources(source_pk, kind, locator, account, folder, remote_uid)
-observations(observation_pk, source_pk, source_offset, message_pk,
-             disposition, run_pk, detail)
+observations(observation_pk, source_pk, source_offset, source_sha256,
+             message_pk, disposition, run_pk, detail)
 ingest_runs(run_pk, started_at, completed_at, command, version, result)
 manifests(generation_pk, pathname, sha256, created_at)
 ```
@@ -167,6 +168,9 @@ For every candidate source record:
    `Received:`, then the prior resolved message date in the same input stream.
    A singleton source file may instead derive its year from a four-digit year
    in the source path; record every fallback source in the catalog.
+   An unexpected parser exception records the source path, byte offset, raw
+   hash, and exception before stopping; already queued earlier messages are
+   drained and committed first.
 3. If `X-Apple-Auto-Saved` exists, commit an `autosave-excluded` observation
    and continue.  Do not write an MBOX record.
 4. Look up `(normalized Message-ID, SHA-256)`.  If it exists, commit a

@@ -215,3 +215,32 @@ def test_interrupt_stops_cleanly(source_mail: tuple[Path, dict[str, bytes]], tmp
     assert "interrupted:" in stderr
     assert "Traceback" not in stderr
     assert stdout.startswith("year\tsent\treceived\tpeople\n")
+
+
+def test_parser_failure_records_source_identity_and_failed_run(tmp_path: Path) -> None:
+    """Requirement: an unexpected parser failure is identifiable and safely rerunnable."""
+    source = tmp_path / "undated.eml"
+    raw = b"Message-ID: <undated@example>\nFrom: sender@example.net\n\nbody\n"
+    source.write_bytes(raw)
+    archive = tmp_path / "archive"
+    owner_names = Path(__file__).parents[1] / "owner-names.txt"
+
+    result = run_ingest(source, archive, owner_names)
+
+    assert result.returncode != 0
+    digest = hashlib.sha256(raw).hexdigest()
+    assert f"source offset 0; sha256={digest}" in result.stderr
+    catalog = sqlite3.connect(archive / "archive.sqlite3")
+    try:
+        completed_at, run_result, detail = catalog.execute(
+            "SELECT completed_at, result, detail FROM ingest_runs"
+        ).fetchone()
+        assert completed_at is not None
+        assert run_result == "failed"
+        assert detail.startswith("RuntimeError: failed to parse")
+        assert catalog.execute(
+            "SELECT source_path, source_offset, source_sha256, disposition, detail FROM observations"
+        ).fetchone() == (str(source), 0, digest, "error", f"ValueError: no date or year path fallback for {source}")
+    finally:
+        catalog.close()
+    assert not list(archive.glob("*.mbox"))

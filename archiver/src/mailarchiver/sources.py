@@ -12,6 +12,7 @@ from pydantic import BaseModel
 class SourceMessage(BaseModel):
     path: Path
     raw: bytes
+    source_offset: int
     bytes_done: int
     bytes_total: int
 
@@ -39,15 +40,15 @@ def source_messages(source: Path) -> Iterator[SourceMessage]:
     for path in paths:
         if path.suffix == ".emlx":
             raw = emlx_bytes(path)
-            yield SourceMessage(path=path, raw=raw, bytes_done=path.stat().st_size, bytes_total=path.stat().st_size)
+            yield SourceMessage(path=path, raw=raw, source_offset=0, bytes_done=path.stat().st_size, bytes_total=path.stat().st_size)
         elif is_mbox(path):
             box = mailbox.mbox(path, factory=None, create=False)
             try:
                 for key in box.iterkeys():
-                    _, end = box._toc[key]
-                    yield SourceMessage(path=path, raw=box.get_bytes(key, from_=False), bytes_done=end, bytes_total=path.stat().st_size)
+                    start, end = box._toc[key]
+                    yield SourceMessage(path=path, raw=box.get_bytes(key, from_=False), source_offset=start, bytes_done=end, bytes_total=path.stat().st_size)
             finally:
                 box.close()
         elif path.suffix.lower() == ".eml" or is_maildir_message(path):
             raw = path.read_bytes()
-            yield SourceMessage(path=path, raw=raw, bytes_done=len(raw), bytes_total=len(raw))
+            yield SourceMessage(path=path, raw=raw, source_offset=0, bytes_done=len(raw), bytes_total=len(raw))

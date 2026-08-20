@@ -11,7 +11,10 @@ def create_catalog(path: Path) -> sqlite3.Connection:
     database.executescript(
         """
         PRAGMA foreign_keys = ON;
-        CREATE TABLE IF NOT EXISTS ingest_runs (run_pk INTEGER PRIMARY KEY, started_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS ingest_runs (
+            run_pk INTEGER PRIMARY KEY, started_at TEXT NOT NULL,
+            completed_at TEXT, result TEXT, detail TEXT
+        );
         CREATE TABLE IF NOT EXISTS email_addresses (
             address_pk INTEGER PRIMARY KEY, address TEXT NOT NULL UNIQUE
         );
@@ -24,6 +27,7 @@ def create_catalog(path: Path) -> sqlite3.Connection:
         CREATE TABLE IF NOT EXISTS observations (
             observation_pk INTEGER PRIMARY KEY, run_pk INTEGER NOT NULL REFERENCES ingest_runs(run_pk),
             message_pk INTEGER REFERENCES messages(message_pk), source_path TEXT NOT NULL,
+            source_offset INTEGER NOT NULL DEFAULT 0, source_sha256 TEXT NOT NULL DEFAULT '',
             disposition TEXT NOT NULL, detail TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS recipients (
@@ -46,6 +50,11 @@ def create_catalog(path: Path) -> sqlite3.Connection:
         );
         """
     )
+    ensure_column(database, "ingest_runs", "completed_at", "TEXT")
+    ensure_column(database, "ingest_runs", "result", "TEXT")
+    ensure_column(database, "ingest_runs", "detail", "TEXT")
+    ensure_column(database, "observations", "source_offset", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(database, "observations", "source_sha256", "TEXT NOT NULL DEFAULT ''")
     migrate_addresses(database)
     database.executescript(
         """
@@ -55,6 +64,11 @@ def create_catalog(path: Path) -> sqlite3.Connection:
         """
     )
     return database
+
+
+def ensure_column(database: sqlite3.Connection, table: str, column: str, declaration: str) -> None:
+    if column not in {row[1] for row in database.execute(f"PRAGMA table_info({table})")}:
+        database.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
 
 
 def create_search(path: Path) -> sqlite3.Connection:

@@ -51,7 +51,9 @@ requirement.
   they are reported as metadata exceptions.
 * The archive records every source observation: source kind, source path or
   remote account/folder/UID, source byte offset where applicable, ingest run,
-  and disposition (`archived`, `duplicate`, `autosave-excluded`, or error).
+  raw message SHA-256, and disposition (`archived`, `duplicate`,
+  `autosave-excluded`, or error). Parser failures retain the exception detail
+  and identify the source record without printing message content.
 * Idempotence is at message level.  After a raw message hash and Message-ID
   have been obtained, a matching stored identity is skipped before ClamAV,
   text extraction, and MBOX writing.  A deliberate rescan/reindex mode is
@@ -80,6 +82,10 @@ requirement.
   exit status 130 without a traceback.  An `ENOSPC` MBOX append
   must be rolled back to the prior file size where possible, reported, and
   stopped without silently treating the message as archived.
+* Every ingest run records its completion time, result, and failure detail.
+  An unexpected parser failure drains earlier queued messages, closes
+  resources, refreshes manifests for committed MBOX changes, and leaves a
+  rerunnable error observation containing the source offset and raw SHA-256.
 * Completed and interrupted ingests print the archive report.  Reports always
   include year totals and default to the top 10 senders and recipients for the
   selected scope.  Addresses identified by Sent classification are suppressed

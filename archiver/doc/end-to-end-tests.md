@@ -25,6 +25,10 @@ sender and recipient lists for an inclusive year selection.
 `test_interrupt_stops_cleanly` sends a real SIGINT to an active CLI subprocess
 and asserts exit 130, a controlled interruption report, and no traceback.
 
+`test_parser_failure_records_source_identity_and_failed_run` uses an undated
+message with no path-year fallback and checks the failed run result plus the
+error observation's source path, offset, raw SHA-256, and exception detail.
+
 `test_message.py` checks earliest-valid-Received date fallback independently of
 the MBOX/ClamAV integration corpus.
 

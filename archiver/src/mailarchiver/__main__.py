@@ -96,6 +96,12 @@ class ProgressReporter:
             self.state.file_bytes_done = source.bytes_done
             self.state.file_bytes_total = source.bytes_total
 
+    def record_source(self, source: SourceMessage) -> None:
+        with self.lock:
+            self.state.current_file = str(source.path)
+            self.state.file_bytes_done = source.bytes_done
+            self.state.file_bytes_total = source.bytes_total
+
     def record_disposition(self, disposition: str) -> None:
         with self.lock:
             if disposition == "archived":
@@ -151,6 +157,7 @@ def ingest(args: argparse.Namespace) -> None:
     catalog, search = create_catalog(archive / "archive.sqlite3"), create_search(archive / "search.sqlite3")
     owners = owner_tokens(Path(args.owner_names_file))
     run_pk = catalog.execute("INSERT INTO ingest_runs(started_at) VALUES (?)", (datetime.now(timezone.utc).isoformat(),)).lastrowid
+    catalog.commit()
     boxes: dict[Path, mailbox.mbox] = {}
     prior_dates: dict[Path, datetime] = {}
     pending_identities: set[tuple[str, str]] = set()
@@ -158,10 +165,18 @@ def ingest(args: argparse.Namespace) -> None:
     succeeded = False
     interrupted = False
     disk_full = False
+    failure_detail: str | None = None
     progress.start()
 
+    def observe(source: SourceMessage, disposition: str, detail: str, sha256: str, message_pk: int | None = None) -> None:
+        catalog.execute(
+            "INSERT INTO observations(run_pk, message_pk, source_path, source_offset, source_sha256, disposition, detail) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (run_pk, message_pk, str(source.path), source.source_offset, sha256, disposition, detail),
+        )
+
     def archive_scanned(candidate: PendingScan, infected: bool) -> None:
-        path, raw, parsed = candidate.source.path, candidate.source.raw, candidate.parsed
+        raw, parsed = candidate.source.raw, candidate.parsed
         category = "INFECTED" if infected else ("Sent" if any(token in parsed.sender for token in owners) else "Archive")
         sender_pk = address_pk(catalog, parsed.sender)
         message_pk = catalog.execute("INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) VALUES (?, ?, ?, ?, ?, ?, ?)", (parsed.message_id, parsed.sha256, sender_pk, parsed.subject, parsed.date_utc, parsed.date_source, category)).lastrowid
@@ -183,7 +198,7 @@ def ingest(args: argparse.Namespace) -> None:
             (message_pk, generation[0], location.byte_offset, location.byte_length),
         )
         index_message(search, raw, args.index_attachments)
-        catalog.execute("INSERT INTO observations(run_pk, message_pk, source_path, disposition, detail) VALUES (?, ?, ?, ?, ?)", (run_pk, message_pk, str(path), "archived", category))
+        observe(candidate.source, "archived", category, parsed.sha256, message_pk)
         catalog.commit()
         search.commit()
         progress.record_disposition("archived")
@@ -196,11 +211,24 @@ def ingest(args: argparse.Namespace) -> None:
             for root in args.roots:
                 for source in source_messages(Path(root)):
                     path, raw = source.path, source.raw
-                    parsed = parse_message(raw, path, prior_dates.get(path))
+                    progress.record_source(source)
+                    try:
+                        parsed = parse_message(raw, path, prior_dates.get(path))
+                    except Exception as error:
+                        digest = hashlib.sha256(raw).hexdigest()
+                        observe(source, "error", f"{type(error).__name__}: {error}", digest)
+                        catalog.commit()
+                        while pending:
+                            completed, future = pending.popleft()
+                            archive_scanned(completed, future.result())
+                            pending_identities.remove((completed.parsed.message_id, completed.parsed.sha256))
+                        raise RuntimeError(
+                            f"failed to parse {path} at source offset {source.source_offset}; sha256={digest}"
+                        ) from error
                     prior_dates[path] = datetime.fromisoformat(parsed.date_utc)
                     progress.record(parsed, source)
                     if parsed.autosave:
-                        catalog.execute("INSERT INTO observations(run_pk, source_path, disposition, detail) VALUES (?, ?, ?, ?)", (run_pk, str(path), "autosave-excluded", "X-Apple-Auto-Saved"))
+                        observe(source, "autosave-excluded", "X-Apple-Auto-Saved", parsed.sha256)
                         catalog.commit()
                         progress.record_disposition("autosave-excluded")
                         continue
@@ -209,7 +237,7 @@ def ingest(args: argparse.Namespace) -> None:
                     if existing is not None or identity in pending_identities:
                         message_pk = None if existing is None else existing[0]
                         detail = "same Message-ID and SHA-256" if existing is not None else "same Message-ID and SHA-256 pending scan"
-                        catalog.execute("INSERT INTO observations(run_pk, message_pk, source_path, disposition, detail) VALUES (?, ?, ?, ?, ?)", (run_pk, message_pk, str(path), "duplicate", detail))
+                        observe(source, "duplicate", detail, parsed.sha256, message_pk)
                         catalog.commit()
                         progress.record_disposition("duplicate")
                         continue
@@ -227,22 +255,49 @@ def ingest(args: argparse.Namespace) -> None:
         catalog.commit()
         search.commit()
         succeeded = True
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as error:
         interrupted = True
+        failure_detail = type(error).__name__
         catalog.commit()
         search.commit()
         raise
-    except DiskFullError:
+    except DiskFullError as error:
         disk_full = True
+        failure_detail = f"{type(error).__name__}: {error}"
+        catalog.rollback()
+        search.rollback()
+        raise
+    except BaseException as error:
+        failure_detail = f"{type(error).__name__}: {error}"
+        catalog.rollback()
+        search.rollback()
         raise
     finally:
         for box in boxes.values():
             box.close()
+        manifest_error: Exception | None = None
+        if boxes:
+            try:
+                write_manifests(archive)
+            except Exception as error:
+                manifest_error = error
+                if failure_detail is None:
+                    failure_detail = f"{type(error).__name__}: {error}"
+                else:
+                    print(f"manifest refresh also failed: {error}", file=sys.stderr)
+        result = "completed" if succeeded else "interrupted" if interrupted else "disk-full" if disk_full else "failed"
+        if manifest_error is not None:
+            result = "failed"
+        catalog.execute(
+            "UPDATE ingest_runs SET completed_at = ?, result = ?, detail = ? WHERE run_pk = ?",
+            (datetime.now(timezone.utc).isoformat(), result, failure_detail, run_pk),
+        )
+        catalog.commit()
         catalog.close()
         search.close()
-        if succeeded or interrupted:
-            write_manifests(archive)
-        progress.finish("completed" if succeeded else "interrupted" if interrupted else "disk-full" if disk_full else "failed")
+        progress.finish(result)
+        if manifest_error is not None and succeeded:
+            raise manifest_error
 
 
 def review(args: argparse.Namespace) -> None:

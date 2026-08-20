@@ -40,5 +40,7 @@ def test_migrates_repeated_address_text_to_foreign_keys(tmp_path: Path) -> None:
         assert catalog.execute("SELECT count(DISTINCT sender_address_pk) FROM messages").fetchone() == (1,)
         assert catalog.execute("SELECT count(DISTINCT address_pk) FROM recipients").fetchone() == (1,)
         assert catalog.execute("SELECT message_pk FROM observations").fetchone() == (1,)
+        assert {row[1] for row in catalog.execute("PRAGMA table_info(ingest_runs)")} >= {"completed_at", "result", "detail"}
+        assert {row[1] for row in catalog.execute("PRAGMA table_info(observations)")} >= {"source_offset", "source_sha256"}
     finally:
         catalog.close()
