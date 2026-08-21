@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import sqlite3
 import warnings
 from email import policy
@@ -12,6 +13,10 @@ from email.parser import BytesParser
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 from .message import decoded_header
+
+SEARCH_CATEGORIES = ("Archive", "Sent")
+QUARANTINE_MAILBOX = re.compile(r"^(?:INFECTED|MALFORMED)\d*\.mbox$")
+
 
 def decoded_part(part: Message) -> str:
     payload = part.get_payload(decode=True) or b""

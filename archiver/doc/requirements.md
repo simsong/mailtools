@@ -120,8 +120,10 @@ requirement.
 * Only a positive detection routes a message to `INFECTED.mbox`; an
   unscannable attachment or scanner failure does not destroy or silently
   exclude a message.
-* Infected mail remains searchable by headers and body text, but attachment
-  text extraction is disabled by default.
+* Infected and malformed quarantine mail remains catalogued but is excluded
+  from the disposable search index, ordinary search listings, reports, and
+  correspondent statistics. Its canonical MBOX content remains available for
+  an explicit future quarantine-review workflow.
 
 ## Primary metadata database
 
@@ -156,7 +158,7 @@ column name also stores explicitly labeled non-email Google Chat identities.
 ## Search database
 
 `search.sqlite3` is a separate, disposable SQLite FTS5 database.  It indexes
-message SHA-256, normalized headers, `text/plain` body text when present,
+normal Sent and Archive message SHA-256, normalized headers, `text/plain` body text when present,
 otherwise rendered `text/html`, otherwise safe single-part message text.  It
 parses XML-looking content declared as `text/html` with the same forgiving HTML
 rules without emitting parser diagnostics.  It does not index attachment bytes by default.  `--index-attachments` enables
@@ -165,6 +167,9 @@ configured, opt-in capability using Apache Tika; the Tika JAR is installed
 locally and checksum-verified, never run as a service.  It must be fully rebuildable from the
 canonical MBOX files and `archive.sqlite3`, and is not backed up as a required
 preservation object.
+It excludes `INFECTED` and `MALFORMED` quarantine categories even when
+attachment indexing is requested. `refresh-index` applies the same exclusion
+when rebuilding from canonical MBOX files.
 Index extraction and insertion happen after canonical MBOX/catalog publication.
 An indexing failure is recorded as a metadata defect and does not reject mail;
 `refresh-index` repairs missing disposable content.

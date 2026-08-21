@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from .archive_path import add_archive_argument, require_archive
 from .message import decoded_header
 from .mbox import MboxLocation, read_verified_location
-from .search import decoded_part, html_text, is_attachment
+from .search import SEARCH_CATEGORIES, decoded_part, html_text, is_attachment
 
 DEFAULT_LIMIT = 10
 BOLD = "\033[1m"
@@ -81,8 +81,8 @@ def search_headers(archive: Path, terms: SearchTerms, limit: int) -> list[Messag
     database = sqlite3.connect(f"file:{catalog_path}?mode=ro", uri=True)
     try:
         database.execute("ATTACH DATABASE ? AS search", (f"file:{search_path}?mode=ro",))
-        clauses: list[str] = []
-        parameters: list[str | int] = []
+        clauses = ["m.category IN (?, ?)"]
+        parameters: list[str | int] = list(SEARCH_CATEGORIES)
         for address in terms.to:
             clauses.append(
                 "EXISTS (SELECT 1 FROM recipients r JOIN email_addresses a ON a.address_pk = r.address_pk "

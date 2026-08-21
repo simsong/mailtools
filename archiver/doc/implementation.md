@@ -179,9 +179,13 @@ project-local `.tools/tika/<version>/` directory; Tika remains an optional
 future extractor for PDF and Office attachments, not a service.  Rebuild the
 index in a temporary database,
 validate row identities against `archive.sqlite3`, then atomically replace the
-old search database.
+old search database. Live indexing and `refresh-index` both exclude
+`INFECTED` and the reserved `MALFORMED` quarantine category; rebuild recognizes
+numbered and legacy unnumbered quarantine MBOX filenames.
+Ordinary `mailsearch` listings and reports select only `Sent` and `Archive`;
+the authoritative catalog still retains every quarantine record.
 Normal ingest publishes canonical MBOX/catalog state first, then attempts the
-disposable FTS insertion. Extraction or indexing failure records a
+disposable FTS insertion for normal Sent and Archive mail. Extraction or indexing failure records a
 `search-index` metadata defect without rolling back canonical mail.
 
 ## Ingest pipeline
@@ -215,7 +219,8 @@ For every candidate source record:
    catalog transaction until the append succeeds. Commit the authoritative
    catalog and clear the journal. An exception or the next ingest startup
    truncates an uncatalogued append and refreshes manifests; a catalogued append
-   is validated and retained. Index disposable search content afterward.
+   is validated and retained. Index disposable search content afterward only
+   for normal Sent and Archive mail.
 
 Deduplication is deliberately before ClamAV: a known archived message has
 already been scanned and classified.  `--rescan` explicitly revisits stored
@@ -244,8 +249,9 @@ At run completion, sort each touched normal mailbox by `(resolved_date_utc,
 sha256)`.  The sorter writes a new MBOX and manifest beside the original,
 scans both end-to-end, compares the unordered identity sets, then atomically
 updates the relevant `mbox_generations`/`locations` rows.  It retains the old
-file until validation succeeds and deletes it only then.  `INFECTED` mail is
-not text-extracted and is not moved into a normal mailbox.
+file until validation succeeds and deletes it only then.  `INFECTED` and
+`MALFORMED` quarantine mail is not FTS-extracted and is not moved into a normal
+mailbox.
 
 ## Antivirus and text extraction
 
@@ -270,9 +276,9 @@ separately configured local environment such as CI.
 
 MIME traversal and extraction are bounded by configured size, recursion,
 time, and decompression limits.  Plain text and rendered HTML are indexed
-first.  Attachment extractors are explicit allow-listed adapters; extraction
-failures are recorded but never affect preservation.  The default policy
-disables attachment extraction for infected messages.
+first for normal mail. Attachment extractors are explicit allow-listed
+adapters; extraction failures are recorded but never affect preservation.
+Quarantine categories are omitted from FTS entirely.
 
 ## Remote sources
 

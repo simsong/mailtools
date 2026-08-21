@@ -91,6 +91,7 @@ def test_ingest_routes_preserves_and_indexes_messages(
     assert "file=" in result.stderr
     assert "seen_skipped=" in result.stderr
     assert "  year    sent    received    people" in result.stdout
+    assert "  2024       1           2" in result.stdout
     assert "top senders" in result.stdout
 
     assert mailbox_message_bytes(archive / "2024-Sent1.mbox") == [raw["sent"]]
@@ -140,12 +141,62 @@ def test_ingest_routes_preserves_and_indexes_messages(
 
     search = sqlite3.connect(archive / "search.sqlite3")
     try:
-        assert search.execute("SELECT count(*) FROM message_fts WHERE message_fts MATCH 'Eicar'").fetchone() == (0,)
+        infected_sha256 = hashlib.sha256(raw["infected"]).hexdigest()
+        assert search.execute("SELECT count(*) FROM message_fts").fetchone() == (3,)
+        assert search.execute("SELECT count(*) FROM message_fts WHERE sha256 = ?", (infected_sha256,)).fetchone() == (0,)
+    finally:
+        search.close()
+
+    refreshed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-index"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert_success(refreshed)
+    search = sqlite3.connect(archive / "search.sqlite3")
+    try:
+        assert search.execute("SELECT count(*) FROM message_fts").fetchone() == (3,)
+        assert search.execute("SELECT count(*) FROM message_fts WHERE sha256 = ?", (infected_sha256,)).fetchone() == (0,)
     finally:
         search.close()
     assert (archive / "2024-Archive1.mbox.sha256").is_file()
     assert (archive / "INFECTED1.mbox.sha256").is_file()
     assert not (archive / ".mailarchiver-pending.json").exists()
+
+
+def test_refresh_index_excludes_quarantine_mailboxes(tmp_path: Path) -> None:
+    """Requirement: FTS rebuild excludes infected and malformed quarantine mail."""
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    messages = {
+        "2024-Archive1.mbox": b"Message-ID: <normal@example>\nSubject: normal\n\nnormal body\n",
+        "INFECTED.mbox": b"Message-ID: <infected@example>\nSubject: infected\n\ninfected body\n",
+        "MALFORMED1.mbox": b"Message-ID: <malformed@example>\nSubject: malformed\n\nmalformed body\n",
+    }
+    for filename, raw in messages.items():
+        box = mailbox.mbox(archive / filename, create=True)
+        try:
+            box.add(raw)
+            box.flush()
+        finally:
+            box.close()
+
+    refreshed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-index"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert_success(refreshed)
+    search = sqlite3.connect(archive / "search.sqlite3")
+    try:
+        assert search.execute("SELECT sha256 FROM message_fts").fetchall() == [
+            (hashlib.sha256(messages["2024-Archive1.mbox"]).hexdigest(),)
+        ]
+    finally:
+        search.close()
 
 
 def test_unchanged_source_files_are_skipped_wholesale(source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path) -> None:
@@ -273,9 +324,9 @@ def test_report_counts_years_people_and_correspondents(source_mail: tuple[Path, 
     )
     assert result.returncode == 0, result.stdout + result.stderr
     lines = result.stdout.splitlines()
-    assert "  2024       1           3         3" in lines
-    assert "sender@example.net           3  2024-01-01  2024-01-04" in lines
-    assert "recipient@example.net           4  2024-01-01  2024-01-04" in lines
+    assert "  2024       1           2         3" in lines
+    assert "sender@example.net           2  2024-01-03  2024-01-04" in lines
+    assert "recipient@example.net           3  2024-01-02  2024-01-04" in lines
     assert "simsong@example.com" not in result.stdout
 
 

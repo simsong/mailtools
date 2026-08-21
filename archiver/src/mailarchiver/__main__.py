@@ -39,7 +39,7 @@ from .mbox import (
     write_manifests,
 )
 from .scanner import ClamScanner
-from .search import index_message, index_message_safely
+from .search import QUARANTINE_MAILBOX, SEARCH_CATEGORIES, index_message, index_message_safely
 from .sources import (
     IncompleteAppleMailMessageError,
     SourceFile,
@@ -312,7 +312,8 @@ def ingest(args: argparse.Namespace) -> None:
             if recover_publication(archive, catalog, search) is not PublicationRecovery.NONE:
                 write_manifests(archive)
             raise
-        index_message_safely(catalog, search, message_pk, raw, args.index_attachments)
+        if category in SEARCH_CATEGORIES:
+            index_message_safely(catalog, search, message_pk, raw, args.index_attachments)
         progress.record_disposition("archived")
         if category == "INFECTED":
             progress.record_disposition("infected")
@@ -466,7 +467,12 @@ def report_years(value: str | None) -> tuple[int, int] | None:
 def print_report(archive: Path, years: tuple[int, int] | None, top: int | None) -> None:
     catalog = sqlite3.connect(archive / "archive.sqlite3")
     try:
-        clause, parameters = ("", ()) if years is None else (" WHERE CAST(substr(date_utc, 1, 4) AS INTEGER) BETWEEN ? AND ?", years)
+        conditions = ["category IN (?, ?)"]
+        parameters: tuple[str | int, ...] = SEARCH_CATEGORIES
+        if years is not None:
+            conditions.append("CAST(substr(date_utc, 1, 4) AS INTEGER) BETWEEN ? AND ?")
+            parameters += years
+        clause = " WHERE " + " AND ".join(conditions)
         rows = catalog.execute(
             "WITH relevant AS (SELECT * FROM messages" + clause + "), "
             "people AS (SELECT substr(relevant.date_utc, 1, 4) AS year, email_addresses.address "
@@ -553,6 +559,8 @@ def refresh_index(args: argparse.Namespace) -> None:
     search = create_search(temporary)
     try:
         for path in archive.glob("*.mbox"):
+            if QUARANTINE_MAILBOX.fullmatch(path.name):
+                continue
             box = mailbox.mbox(path, factory=None, create=False)
             try:
                 for key in box.iterkeys():

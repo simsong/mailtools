@@ -77,6 +77,31 @@ def test_mailsearch_limit_zero_and_number_print_original_message(tmp_path: Path)
     assert displayed.stdout == render_message(raw, False, False).encode()
 
 
+def test_mailsearch_listing_excludes_quarantine_categories(tmp_path: Path) -> None:
+    """Requirement: ordinary search results exclude catalogued quarantine mail."""
+    archive, _ = make_archive(tmp_path)
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        sender = address_pk(catalog, "quarantine@example.net")
+        for category in ("INFECTED", "MALFORMED"):
+            catalog.execute(
+                "INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) "
+                "VALUES (?, ?, ?, ?, '2024-01-04T10:00:00+00:00', 'date', ?)",
+                (category.lower(), hashlib.sha256(category.encode()).hexdigest(), sender, category.lower(), category),
+            )
+        catalog.commit()
+    finally:
+        catalog.close()
+
+    listed = run_search("--archive", str(archive), "--limit", "0")
+
+    assert listed.returncode == 0, listed.stderr
+    assert listed.stdout.count("\n") == 1
+    assert "planning meeting" in listed.stdout
+    assert "infected" not in listed.stdout
+    assert "malformed" not in listed.stdout
+
+
 def test_numbered_empty_message_restores_zero_source_bytes(tmp_path: Path) -> None:
     """Requirement: MBOX's separator newline does not change an empty message's identity."""
     archive = tmp_path / "archive"
