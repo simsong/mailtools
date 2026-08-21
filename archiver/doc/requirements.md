@@ -74,6 +74,11 @@ requirement.
   by a valid `From ` boundary resumes at that byte offset; all other changes
   reprocess the whole file.  The checkpoint is updated only after the selected
   region and its queued scans finish and the source metadata remains stable.
+  Discovery, ingest, fingerprinting, and checkpointing proceed one file at a
+  time; ingest must not pre-hash the complete source tree or a never-seen first
+  file before archiving its messages. A new file's complete fingerprint is
+  calculated before its checkpoint is committed. A later source failure or
+  interruption retains every earlier fully published file.
 
 ## Malware handling
 

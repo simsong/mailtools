@@ -13,6 +13,7 @@ import threading
 import time
 from collections import Counter, deque
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
@@ -250,7 +251,7 @@ def ingest(args: argparse.Namespace) -> None:
         ).fetchone()
         report_hash = lambda done, _total: progress.record_file(source.path, done, source.byte_length)
         if prior is None:
-            return SourcePlan(source=source, sha256=sha256_file(source.path, progress=report_hash))
+            return SourcePlan(source=source)
         prior_length, prior_sha256 = prior
         if source.byte_length == prior_length:
             sha256 = sha256_file(source.path, progress=report_hash)
@@ -319,28 +320,31 @@ def ingest(args: argparse.Namespace) -> None:
             progress.record_disposition("infected")
 
     try:
-        progress.set_phase("checking sources")
-        plans: list[SourcePlan] = []
-        for root in args.roots:
-            for source_file in source_files(Path(root)):
-                plan = plan_source(source_file)
-                if plan.skip:
-                    checkpoint(source_file, plan.sha256)
-                else:
-                    plans.append(plan)
-        if plans:
-            progress.set_phase("starting ClamAV")
-            with ClamScanner() as scanner, ThreadPoolExecutor(max_workers=args.workers) as workers:
-                progress.set_phase("ingesting")
-                pending: deque[tuple[PendingScan, Future[bool]]] = deque()
+        scanner: ClamScanner | None = None
+        workers: ThreadPoolExecutor | None = None
+        with ExitStack() as resources:
+            for root in args.roots:
+                for source_file in source_files(Path(root)):
+                    progress.set_phase("checking sources")
+                    plan = plan_source(source_file)
+                    if plan.skip:
+                        assert plan.sha256 is not None
+                        checkpoint(source_file, plan.sha256)
+                        continue
+                    if scanner is None:
+                        progress.set_phase("starting ClamAV")
+                        scanner = resources.enter_context(ClamScanner())
+                        workers = resources.enter_context(ThreadPoolExecutor(max_workers=args.workers))
+                    assert scanner is not None and workers is not None
+                    progress.set_phase("ingesting")
+                    pending: deque[tuple[PendingScan, Future[bool]]] = deque()
 
-                def drain_pending() -> None:
-                    while pending:
-                        completed, future = pending.popleft()
-                        archive_scanned(completed, future.result())
-                        pending_identities.remove((completed.parsed.message_id, completed.parsed.sha256))
+                    def drain_pending() -> None:
+                        while pending:
+                            completed, future = pending.popleft()
+                            archive_scanned(completed, future.result())
+                            pending_identities.remove((completed.parsed.message_id, completed.parsed.sha256))
 
-                for plan in plans:
                     path = plan.source.path
                     if plan.start_offset:
                         prior = catalog.execute(
@@ -392,7 +396,14 @@ def ingest(args: argparse.Namespace) -> None:
                             archive_scanned(completed, future.result())
                             pending_identities.remove((completed.parsed.message_id, completed.parsed.sha256))
                     drain_pending()
-                    checkpoint(plan.source, plan.sha256)
+                    progress.set_phase("checking sources")
+                    source_sha256 = plan.sha256 or sha256_file(
+                        plan.source.path,
+                        progress=lambda done, _total: progress.record_file(
+                            plan.source.path, done, plan.source.byte_length
+                        ),
+                    )
+                    checkpoint(plan.source, source_sha256)
         catalog.commit()
         search.commit()
         succeeded = True

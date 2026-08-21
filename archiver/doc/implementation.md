@@ -69,6 +69,12 @@ prints the partial-run archive report before returning 130.  An `ENOSPC` append 
 possible and reports a controlled nonzero stop.  Acceptance coverage includes
 the checked-in MBOX/EMLX corpus, source checkpoints, append resumption,
 malformed metadata, publication recovery, and disposable-index failure.
+Source discovery and full-file fingerprinting are interleaved with ingest.
+Each changed file is archived and checkpointed before discovery continues to
+the next file. A never-seen file is ingested before its complete fingerprint
+is calculated; that fingerprint is still required before its checkpoint is
+committed. The scanner and worker pool start lazily at the first changed file,
+so an unchanged tree does not start ClamAV.
 Modern Apple Mail package traversal recognizes complete
 `Data/.../Messages/*.emlx` payloads and ignores MailData, plist, and detached
 attachment files. It reports missing paths and macOS Full Disk Access failures
@@ -192,10 +198,13 @@ disposable FTS insertion for normal Sent and Archive mail. Extraction or indexin
 
 For every candidate source record:
 
-1. Fingerprint each physical source file. Skip a complete SHA-256 match. For a
-   grown MBOX, compare the old-length prefix and resume only at a validated
-   appended-message boundary; otherwise start that file at byte zero. Drain
-   queued scans and publish the updated file checkpoint at every file boundary.
+1. Discover one physical source file, then fully process and checkpoint it
+   before discovering the next. For a never-seen file, ingest messages before
+   calculating the complete source SHA-256. For a known file, fingerprint
+   first to skip a complete match; for a grown MBOX, compare the old-length
+   prefix and resume only at a validated appended-message boundary. Drain
+   queued scans, calculate any deferred fingerprint, and publish the updated
+   file checkpoint at every file boundary.
 2. Stream exactly the RFC 5322 bytes from its source adapter.  An `.emlx`
    adapter reads the decimal length prefix, then exactly that many bytes.
 3. Hash the raw RFC 5322 bytes and parse only headers needed for identity,

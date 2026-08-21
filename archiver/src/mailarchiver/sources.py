@@ -29,7 +29,7 @@ class SourceFile(BaseModel):
 
 class SourcePlan(BaseModel):
     source: SourceFile
-    sha256: str
+    sha256: str | None = None
     start_offset: int = 0
     skip: bool = False
 

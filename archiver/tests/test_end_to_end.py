@@ -229,6 +229,48 @@ def test_unchanged_source_files_are_skipped_wholesale(source_mail: tuple[Path, d
     assert "files_processed=4" in rerun.stderr
 
 
+def test_completed_file_is_published_before_later_source_failure(tmp_path: Path) -> None:
+    """Requirement: source discovery never delays publication of an earlier complete file."""
+    source = tmp_path / "first.eml"
+    raw = (
+        b"Message-ID: <first-before-failure@example>\n"
+        b"From: sender@example.net\n"
+        b"Date: Thu, 1 Feb 2024 12:00:00 +0000\n\nfirst body\n"
+    )
+    source.write_bytes(raw)
+    archive = tmp_path / "archive"
+    owner_names = Path(__file__).parents[1] / "owner-names.txt"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mailarchiver",
+            "--archive",
+            str(archive),
+            "ingest",
+            "--owner-names-file",
+            str(owner_names),
+            "--clamav",
+            str(source),
+            str(tmp_path / "missing-source"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "source not found" in result.stderr
+    assert mailbox_message_bytes(archive / "2024-Archive1.mbox") == [raw]
+    catalog = sqlite3.connect(archive / "archive.sqlite3")
+    try:
+        assert catalog.execute("SELECT count(*) FROM messages").fetchone() == (1,)
+        assert catalog.execute("SELECT count(*) FROM source_files").fetchone() == (1,)
+    finally:
+        catalog.close()
+
+
 def test_mbox_append_resumes_after_verified_prefix(tmp_path: Path) -> None:
     """Requirement: appended MBOX input resumes at the old verified byte boundary."""
     source = tmp_path / "source.mbox"
