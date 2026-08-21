@@ -86,7 +86,7 @@ def test_ingest_routes_preserves_and_indexes_messages(
     assert "processed=6" in result.stderr
     assert "files_processed=4" in result.stderr
     assert "started:" in result.stderr
-    assert "starting ClamAV:" in result.stderr
+    assert "waiting for ClamAV startup:" in result.stderr
     assert "ingesting:" in result.stderr
     assert "file=" in result.stderr
     assert "seen_skipped=" in result.stderr

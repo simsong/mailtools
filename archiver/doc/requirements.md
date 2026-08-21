@@ -93,11 +93,14 @@ requirement.
 * Ingest progress is written to standard error at startup, every 250
   milliseconds, and completion.  An interactive terminal receives a
   redraw-in-place scoreboard; redirected output remains line-oriented.  Both report the phase,
-  including `checking sources`, `starting ClamAV`, and `ingesting`, plus elapsed
+  including `checking sources`, `waiting for ClamAV startup`, and `ingesting`, plus elapsed
   time, processed message and completed source-file counts, average message rate, resolved date range,
   current year/current-year count, current source file, and source-file byte
   completion percentage.  It separately reports archived, duplicate
   (previously-seen and skipped), autosave-excluded, and infected counts.
+  While ClamAV loads virus definitions, every refresh explicitly identifies
+  that wait and shows its increasing startup elapsed time instead of a stale
+  source-file status.
 * Control-C is a graceful stop: close scanner and MBOX resources, commit
   completed messages and observations, refresh manifests, report interruption,
   print the standard archive report for the completed partial run, and return

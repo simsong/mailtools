@@ -55,6 +55,7 @@ from .sources import (
 
 DEFAULT_REPORT_TOP = 10
 PROGRESS_REFRESH_SECONDS = 0.25
+CLAMAV_START_PHASE = "waiting for ClamAV startup"
 
 
 class YearProgress(BaseModel):
@@ -101,6 +102,7 @@ class ProgressReporter:
         self.tty = sys.stderr.isatty()
         self.rendered = False
         self.phase = "started"
+        self.phase_started_monotonic = self.state.started_monotonic
 
     def start(self) -> None:
         self.display(self.phase)
@@ -109,6 +111,7 @@ class ProgressReporter:
     def set_phase(self, phase: str) -> None:
         with self.lock:
             self.phase = phase
+            self.phase_started_monotonic = time.monotonic()
         self.display(phase)
 
     def record(self, parsed: ParsedMessage, source: SourceMessage) -> None:
@@ -165,14 +168,20 @@ class ProgressReporter:
     def display(self, label: str) -> None:
         with self.lock:
             state = self.state.model_copy(deep=True)
+            phase_started_monotonic = self.phase_started_monotonic
         elapsed = max(time.monotonic() - state.started_monotonic, 0.001)
+        phase_elapsed = max(time.monotonic() - phase_started_monotonic, 0.0)
         dates = "none" if state.earliest_date is None else f"{state.earliest_date.date()}..{state.latest_date.date()}"
         year = "none" if state.current_year is None else str(state.current_year)
         percent = 0 if state.file_bytes_total == 0 else 100 * state.file_bytes_done / state.file_bytes_total
         current = "waiting for source" if state.current_file is None else f"{state.current_file} ({percent:.1f}%)"
+        display_label = label
+        if label == CLAMAV_START_PHASE:
+            display_label = f"{label}: {phase_elapsed:.1f}s"
+            current = "ClamAV daemon is loading virus definitions"
         if self.tty:
             lines = [
-                f"mailarchiver ingest  [{label}]",
+                f"mailarchiver ingest  [{display_label}]",
                 f"Processed: {state.processed:,} messages in {state.files_processed:,} files  "
                 f"Rate: {state.processed / elapsed:.2f} messages/s  Elapsed: {elapsed:.0f}s",
                 f"Current:   {current}",
@@ -183,7 +192,7 @@ class ProgressReporter:
             self.rendered = True
         else:
             print(
-                f"{label}: processed={state.processed} files_processed={state.files_processed} "
+                f"{display_label}: processed={state.processed} files_processed={state.files_processed} "
                 f"rate={state.processed / elapsed:.2f}/s "
                 f"file={current} dates={dates} current_year={year} year_messages={state.current_year_messages} "
                 f"archived={state.counts.archived} seen_skipped={state.counts.duplicates} "
@@ -332,7 +341,7 @@ def ingest(args: argparse.Namespace) -> None:
                         checkpoint(source_file, plan.sha256)
                         continue
                     if scanner is None:
-                        progress.set_phase("starting ClamAV")
+                        progress.set_phase(CLAMAV_START_PHASE)
                         scanner = resources.enter_context(ClamScanner())
                         workers = resources.enter_context(ThreadPoolExecutor(max_workers=args.workers))
                     assert scanner is not None and workers is not None

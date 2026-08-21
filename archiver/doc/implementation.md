@@ -59,9 +59,11 @@ a foreground daemon only when no healthy configured socket is available, then
 removes the daemon's stale socket on exit; it never enables persistent or
 on-access scanning.  A thread-safe stderr scoreboard redraws in an interactive
 terminal at startup, every 250 milliseconds, and completion; logs receive one-line
-updates.  Its persistent phase label distinguishes `starting ClamAV` daemon
-loading from `checking sources` and active `ingesting`.  It uses streaming
-source byte offsets to show the current file and
+updates.  Its persistent phase label distinguishes `waiting for ClamAV
+startup` from `checking sources` and active `ingesting`. During that wait, the
+title shows startup elapsed time and the current line says that the daemon is
+loading virus definitions rather than retaining stale source progress. It uses
+streaming source byte offsets to show the current file and
 completion percentage and reports processed source-file plus
 archived/previously-seen/autosave/infected counts.  Control-C commits completed work, closes the
 temporary scanner, refreshes manifests, reports a controlled interruption, and
