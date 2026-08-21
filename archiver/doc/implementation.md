@@ -58,14 +58,17 @@ the reusable owner-token list.  Ingest currently requires `--clamav`: it starts
 a foreground daemon only when no healthy configured socket is available, then
 removes the daemon's stale socket on exit; it never enables persistent or
 on-access scanning.  A thread-safe stderr scoreboard redraws in an interactive
-terminal at startup, every two seconds, and completion; logs receive one-line
-updates.  It uses streaming source byte offsets to show the current file and
-completion percentage and reports archived/previously-seen/autosave/infected
-counts.  Control-C commits completed work, closes the
+terminal at startup, every 250 milliseconds, and completion; logs receive one-line
+updates.  Its persistent phase label distinguishes `starting ClamAV` daemon
+loading from `checking sources` and active `ingesting`.  It uses streaming
+source byte offsets to show the current file and
+completion percentage and reports processed source-file plus
+archived/previously-seen/autosave/infected counts.  Control-C commits completed work, closes the
 temporary scanner, refreshes manifests, reports a controlled interruption, and
 prints the partial-run archive report before returning 130.  An `ENOSPC` append is truncated back to the prior MBOX size where
-possible and reports a controlled nonzero stop.  It is validated only by the
-checked-in three-message MBOX and three-message EMLX acceptance corpus.
+possible and reports a controlled nonzero stop.  Acceptance coverage includes
+the checked-in MBOX/EMLX corpus, source checkpoints, append resumption,
+malformed metadata, publication recovery, and disposable-index failure.
 
 Successful ingests also print the archive report after finalization.  The
 report shows per-year totals plus the top 10 senders and recipients by default;
@@ -86,11 +89,10 @@ it applies `to:`/`from:`/`subject:` catalog filters, UTC calendar-day
 `message_pk` header lines and reads a numbered message directly from its
 catalogued MBOX byte location, validating its SHA-256 before output.
 
-`locations` and `mbox_generations` are created directly when absent. Additive
-schema migration supplies run completion/result fields and observation source
-offset/SHA-256 fields to existing catalogs. Ingest records an appended
-message's MBOX offsets. `refresh-locations` rebuilds locations transactionally
-from canonical MBOX files for a pre-existing archive.
+The catalog has an explicit schema version and is initialized only when fresh;
+unversioned or incompatible databases are rejected rather than migrated.
+`locations` and `mbox_generations` record appended-message offsets, and
+`refresh-locations` rebuilds them transactionally from canonical MBOX files.
 
 Header parsing decodes and unfolds RFC 2047 Subject values before catalog and
 FTS insertion. `mailsearch` also decodes its displayed catalog value, keeping
@@ -100,7 +102,11 @@ canonical MBOX bytes for an existing archive.
 Its result formatter determines number width from the returned `message_pk`
 values and emits ANSI bold only for a terminal subject field.
 Compatibility-policy header objects, including raw 8-bit legacy `Received:`
-and recipient fields, are converted to text before metadata parsing.
+and recipient fields, are converted to text before metadata parsing. Each
+derived header field has an independent exception boundary. Broken RFC 2047
+subjects retain their unfolded source text, and metadata defects are catalogued.
+Parsed dates outside 1900 through the next calendar year are rejected before
+the normal Received/previous-message/path fallbacks.
 
 Numbered-message display parses the verified raw bytes with the standard
 library email parser. It renders the principal headers and prefers
@@ -129,8 +135,11 @@ mbox_generations(generation_pk, filename, sha256, message_count, byte_count,
                  created_run, valid)
 locations(message_pk, generation_pk, byte_offset, byte_length)
 sources(source_pk, kind, locator, account, folder, remote_uid)
+source_files(source_path, modified_at_ns, byte_length, sha256, checked_at,
+             completed_run)
 observations(observation_pk, source_pk, source_offset, source_sha256,
              message_pk, disposition, run_pk, detail)
+metadata_defects(message_pk, field, detail)
 ingest_runs(run_pk, started_at, completed_at, command, version, result)
 manifests(generation_pk, pathname, sha256, created_at)
 ```
@@ -155,14 +164,21 @@ future extractor for PDF and Office attachments, not a service.  Rebuild the
 index in a temporary database,
 validate row identities against `archive.sqlite3`, then atomically replace the
 old search database.
+Normal ingest publishes canonical MBOX/catalog state first, then attempts the
+disposable FTS insertion. Extraction or indexing failure records a
+`search-index` metadata defect without rolling back canonical mail.
 
 ## Ingest pipeline
 
 For every candidate source record:
 
-1. Stream exactly the RFC 5322 bytes from its source adapter.  An `.emlx`
+1. Fingerprint each physical source file. Skip a complete SHA-256 match. For a
+   grown MBOX, compare the old-length prefix and resume only at a validated
+   appended-message boundary; otherwise start that file at byte zero. Drain
+   queued scans and publish the updated file checkpoint at every file boundary.
+2. Stream exactly the RFC 5322 bytes from its source adapter.  An `.emlx`
    adapter reads the decimal length prefix, then exactly that many bytes.
-2. Hash the raw RFC 5322 bytes and parse only headers needed for identity,
+3. Hash the raw RFC 5322 bytes and parse only headers needed for identity,
    classification, and exclusion.  Resolve dates from `Date:`, then
    `Received:`, then the prior resolved message date in the same input stream.
    A singleton source file may instead derive its year from a four-digit year
@@ -170,20 +186,20 @@ For every candidate source record:
    An unexpected parser exception records the source path, byte offset, raw
    hash, and exception before stopping; already queued earlier messages are
    drained and committed first.
-3. If `X-Apple-Auto-Saved` exists, commit an `autosave-excluded` observation
+4. If `X-Apple-Auto-Saved` exists, commit an `autosave-excluded` observation
    and continue.  Do not write an MBOX record.
-4. Look up `(normalized Message-ID, SHA-256)`.  If it exists, commit a
+5. Look up `(normalized Message-ID, SHA-256)`.  If it exists, commit a
    `duplicate` observation and continue without antivirus or text extraction.
-5. Stream the raw message to ClamAV.  A positive result routes it to
+6. Stream the raw message to ClamAV.  A positive result routes it to
    `INFECTED`; all other nonfatal outcomes retain it in its normal category
    while recording the result.
-6. Durably journal the target MBOX, its prior size/existence, and the message
+7. Durably journal the target MBOX, its prior size/existence, and the message
    identity, then append and flush the mboxrd-encoded raw bytes.
-7. Keep message, recipient, observation, location, and search rows in open
-   transactions until the append succeeds. Commit the disposable search row,
-   then the authoritative catalog, and clear the journal. An exception or the
-   next ingest startup truncates an uncatalogued append, removes its search
-   row, and refreshes manifests; a catalogued append is retained.
+8. Keep message, recipient, defect, observation, and location rows in one
+   catalog transaction until the append succeeds. Commit the authoritative
+   catalog and clear the journal. An exception or the next ingest startup
+   truncates an uncatalogued append and refreshes manifests; a catalogued append
+   is validated and retained. Index disposable search content afterward.
 
 Deduplication is deliberately before ClamAV: a known archived message has
 already been scanned and classified.  `--rescan` explicitly revisits stored
@@ -267,7 +283,7 @@ before any canonical archive is published.
 
 ## Delivery sequence
 
-1. Create the package, configuration model, schema migration, MBOX/EMLX
+1. Create the package, configuration model, versioned fresh schema, MBOX/EMLX
    readers/writer, and `verify` command.
 2. Implement recursive local ingest, exact dedupe, autosave exclusion,
    manifests, sorting, recovery, and ClamAV routing.

@@ -76,8 +76,6 @@ def recover_publication(archive: Path, catalog: sqlite3.Connection, search: sqli
         raw = read_location(archive / filename, MboxLocation(byte_offset=offset, byte_length=length))
         if hashlib.sha256(raw).hexdigest() != publication.sha256:
             raise RuntimeError(f"committed pending publication failed validation for {filename}")
-        if search.execute("SELECT 1 FROM message_fts WHERE sha256 = ?", (publication.sha256,)).fetchone() is None:
-            raise RuntimeError(f"committed pending publication is missing search content for {filename}")
         clear_publication_journal(archive)
         return PublicationRecovery.COMMITTED
     path = archive / publication.filename

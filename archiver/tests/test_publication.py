@@ -89,8 +89,6 @@ def test_recovery_keeps_catalogued_mbox_append(tmp_path: Path) -> None:
         (generation_pk, location.byte_offset, location.byte_length),
     )
     catalog.commit()
-    search.execute("INSERT INTO message_fts(sha256, content) VALUES (?, 'committed')", (digest,))
-    search.commit()
 
     try:
         assert recover_publication(archive, catalog, search) is PublicationRecovery.COMMITTED

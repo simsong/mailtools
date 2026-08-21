@@ -1,10 +1,11 @@
 """Requirements: FTS indexes preferred body text, excluding attachments by default."""
 
+import sqlite3
 import warnings
 
 from bs4 import XMLParsedAsHTMLWarning
 
-from mailarchiver.search import message_text
+from mailarchiver.search import index_message_safely, message_text
 
 
 def test_plain_body_wins_and_attachment_requires_opt_in() -> None:
@@ -52,3 +53,18 @@ def test_xml_looking_html_is_rendered_without_parser_warning() -> None:
 
     assert "message body" in rendered
     assert not any(item.category is XMLParsedAsHTMLWarning for item in caught)
+
+
+def test_index_failure_is_recorded_without_raising() -> None:
+    """Requirement: disposable search extraction cannot veto canonical publication."""
+    catalog = sqlite3.connect(":memory:")
+    search = sqlite3.connect(":memory:")
+    catalog.execute(
+        "CREATE TABLE metadata_defects (message_pk INTEGER, field TEXT, detail TEXT, UNIQUE(message_pk, field, detail))"
+    )
+
+    index_message_safely(catalog, search, 7, b"Subject: retained\n\nbody", False)
+
+    field, detail = catalog.execute("SELECT field, detail FROM metadata_defects").fetchone()
+    assert field == "search-index"
+    assert "no such table: message_fts" in detail

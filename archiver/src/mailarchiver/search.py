@@ -55,3 +55,19 @@ def message_text(raw: bytes, index_attachments: bool) -> str:
 
 def index_message(search: sqlite3.Connection, raw: bytes, index_attachments: bool) -> None:
     search.execute("INSERT INTO message_fts(sha256, content) VALUES (?, ?)", (hashlib.sha256(raw).hexdigest(), message_text(raw, index_attachments)))
+
+
+def index_message_safely(
+    catalog: sqlite3.Connection, search: sqlite3.Connection, message_pk: int, raw: bytes, index_attachments: bool
+) -> None:
+    """Index disposable content without allowing extraction failure to veto canonical mail."""
+    try:
+        index_message(search, raw, index_attachments)
+        search.commit()
+    except Exception as error:
+        search.rollback()
+        catalog.execute(
+            "INSERT OR IGNORE INTO metadata_defects(message_pk, field, detail) VALUES (?, 'search-index', ?)",
+            (message_pk, f"{type(error).__name__}: {error}"),
+        )
+        catalog.commit()

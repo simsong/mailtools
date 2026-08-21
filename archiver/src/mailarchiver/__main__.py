@@ -37,10 +37,20 @@ from .mbox import (
     write_manifests,
 )
 from .scanner import ClamScanner
-from .search import index_message
-from .sources import SourceMessage, source_messages
+from .search import index_message, index_message_safely
+from .sources import (
+    SourceFile,
+    SourceMessage,
+    SourcePlan,
+    has_mbox_append_boundary,
+    sha256_file,
+    sha256_file_with_prefix,
+    source_files,
+    source_messages,
+)
 
 DEFAULT_REPORT_TOP = 10
+PROGRESS_REFRESH_SECONDS = 0.25
 
 
 class YearProgress(BaseModel):
@@ -64,6 +74,7 @@ class ProgressState(BaseModel):
     started_at: datetime
     started_monotonic: float
     processed: int = 0
+    files_processed: int = 0
     earliest_date: datetime | None = None
     latest_date: datetime | None = None
     current_year: int | None = None
@@ -85,10 +96,16 @@ class ProgressReporter:
         self.thread = threading.Thread(target=self.heartbeat, daemon=True)
         self.tty = sys.stderr.isatty()
         self.rendered = False
+        self.phase = "started"
 
     def start(self) -> None:
-        self.display("started")
+        self.display(self.phase)
         self.thread.start()
+
+    def set_phase(self, phase: str) -> None:
+        with self.lock:
+            self.phase = phase
+        self.display(phase)
 
     def record(self, parsed: ParsedMessage, source: SourceMessage) -> None:
         date = datetime.fromisoformat(parsed.date_utc)
@@ -114,6 +131,16 @@ class ProgressReporter:
             self.state.file_bytes_done = source.bytes_done
             self.state.file_bytes_total = source.bytes_total
 
+    def record_file(self, path: Path, bytes_done: int, bytes_total: int) -> None:
+        with self.lock:
+            self.state.current_file = str(path)
+            self.state.file_bytes_done = bytes_done
+            self.state.file_bytes_total = bytes_total
+
+    def record_file_complete(self) -> None:
+        with self.lock:
+            self.state.files_processed += 1
+
     def record_disposition(self, disposition: str) -> None:
         with self.lock:
             if disposition == "archived":
@@ -126,8 +153,10 @@ class ProgressReporter:
                 self.state.counts.infected += 1
 
     def heartbeat(self) -> None:
-        while not self.done.wait(2):
-            self.display("progress")
+        while not self.done.wait(PROGRESS_REFRESH_SECONDS):
+            with self.lock:
+                phase = self.phase
+            self.display(phase)
 
     def display(self, label: str) -> None:
         with self.lock:
@@ -140,7 +169,8 @@ class ProgressReporter:
         if self.tty:
             lines = [
                 f"mailarchiver ingest  [{label}]",
-                f"Processed: {state.processed:,}  Rate: {state.processed / elapsed:.2f} messages/s  Elapsed: {elapsed:.0f}s",
+                f"Processed: {state.processed:,} messages in {state.files_processed:,} files  "
+                f"Rate: {state.processed / elapsed:.2f} messages/s  Elapsed: {elapsed:.0f}s",
                 f"Current:   {current}",
                 f"Dates:     {dates}  Current year: {year} ({state.current_year_messages:,} messages)",
                 f"Archived:  {state.counts.archived:,}  Seen/skipped: {state.counts.duplicates:,}  Autosaved: {state.counts.autosaves:,}  Infected: {state.counts.infected:,}",
@@ -149,7 +179,8 @@ class ProgressReporter:
             self.rendered = True
         else:
             print(
-                f"{label}: processed={state.processed} rate={state.processed / elapsed:.2f}/s "
+                f"{label}: processed={state.processed} files_processed={state.files_processed} "
+                f"rate={state.processed / elapsed:.2f}/s "
                 f"file={current} dates={dates} current_year={year} year_messages={state.current_year_messages} "
                 f"archived={state.counts.archived} seen_skipped={state.counts.duplicates} "
                 f"autosaved={state.counts.autosaves} infected={state.counts.infected}",
@@ -166,7 +197,11 @@ class ProgressReporter:
 def ingest(args: argparse.Namespace) -> None:
     archive = Path(args.archive)
     archive.mkdir(parents=True, exist_ok=True)
-    catalog, search = create_catalog(archive / "archive.sqlite3"), create_search(archive / "search.sqlite3")
+    catalog_path = archive / "archive.sqlite3"
+    existing_output = any(archive.glob("*.mbox")) or (archive / "search.sqlite3").exists() or any(archive.glob("*.mbox.sha256"))
+    if not catalog_path.exists() and existing_output:
+        raise RuntimeError("cannot create a fresh catalog beside existing archive output; use a new empty archive directory")
+    catalog, search = create_catalog(catalog_path), create_search(archive / "search.sqlite3")
     recovery = recover_publication(archive, catalog, search)
     if recovery is not PublicationRecovery.NONE:
         write_manifests(archive)
@@ -191,6 +226,40 @@ def ingest(args: argparse.Namespace) -> None:
             (run_pk, message_pk, str(source.path), source.source_offset, sha256, disposition, detail),
         )
 
+    def checkpoint(source: SourceFile, sha256: str) -> None:
+        current = source.path.stat()
+        if current.st_size != source.byte_length or current.st_mtime_ns != source.modified_at_ns:
+            raise RuntimeError(f"source changed during ingest: {source.path}")
+        catalog.execute(
+            "INSERT INTO source_files(source_path, modified_at_ns, byte_length, sha256, checked_at, completed_run) "
+            "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(source_path) DO UPDATE SET "
+            "modified_at_ns = excluded.modified_at_ns, byte_length = excluded.byte_length, sha256 = excluded.sha256, "
+            "checked_at = excluded.checked_at, completed_run = excluded.completed_run",
+            (str(source.path), source.modified_at_ns, source.byte_length, sha256, datetime.now(timezone.utc).isoformat(), run_pk),
+        )
+        catalog.commit()
+        progress.record_file_complete()
+
+    def plan_source(source: SourceFile) -> SourcePlan:
+        progress.record_file(source.path, 0, source.byte_length)
+        prior = catalog.execute(
+            "SELECT byte_length, sha256 FROM source_files WHERE source_path = ?", (str(source.path),)
+        ).fetchone()
+        report_hash = lambda done, _total: progress.record_file(source.path, done, source.byte_length)
+        if prior is None:
+            return SourcePlan(source=source, sha256=sha256_file(source.path, progress=report_hash))
+        prior_length, prior_sha256 = prior
+        if source.byte_length == prior_length:
+            sha256 = sha256_file(source.path, progress=report_hash)
+            return SourcePlan(source=source, sha256=sha256, skip=sha256 == prior_sha256)
+        start_offset = 0
+        if source.byte_length > prior_length:
+            hashes = sha256_file_with_prefix(source.path, prior_length, report_hash)
+            if hashes.prefix_sha256 == prior_sha256 and source.kind == "mbox" and has_mbox_append_boundary(source.path, prior_length):
+                start_offset = prior_length
+            return SourcePlan(source=source, sha256=hashes.sha256, start_offset=start_offset)
+        return SourcePlan(source=source, sha256=sha256_file(source.path, progress=report_hash))
+
     def archive_scanned(candidate: PendingScan, infected: bool) -> None:
         raw, parsed = candidate.source.raw, candidate.parsed
         category = "INFECTED" if infected else ("Sent" if any(token in parsed.sender for token in owners) else "Archive")
@@ -206,11 +275,13 @@ def ingest(args: argparse.Namespace) -> None:
         box: mailbox.mbox | None = None
         try:
             catalog.execute("BEGIN")
-            search.execute("BEGIN")
             sender_pk = address_pk(catalog, parsed.sender)
             message_pk = catalog.execute("INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) VALUES (?, ?, ?, ?, ?, ?, ?)", (parsed.message_id, parsed.sha256, sender_pk, parsed.subject, parsed.date_utc, parsed.date_source, category)).lastrowid
             catalog.executemany("INSERT INTO recipients(message_pk, address_pk) VALUES (?, ?)", ((message_pk, address_pk(catalog, address)) for address in parsed.recipients))
-            index_message(search, raw, args.index_attachments)
+            catalog.executemany(
+                "INSERT OR IGNORE INTO metadata_defects(message_pk, field, detail) VALUES (?, ?, ?)",
+                ((message_pk, defect.field, defect.detail) for defect in parsed.defects),
+            )
             box = boxes.get(mbox_path)
             if box is None:
                 box = mailbox.mbox(mbox_path, create=True)
@@ -228,69 +299,96 @@ def ingest(args: argparse.Namespace) -> None:
                 (message_pk, generation[0], location.byte_offset, location.byte_length),
             )
             observe(candidate.source, "archived", category, parsed.sha256, message_pk)
-            search.commit()
             catalog.commit()
             clear_publication_journal(archive)
         except BaseException:
             catalog.rollback()
-            search.rollback()
             if box is not None:
                 box.close()
                 boxes.pop(mbox_path, None)
             if recover_publication(archive, catalog, search) is not PublicationRecovery.NONE:
                 write_manifests(archive)
             raise
+        index_message_safely(catalog, search, message_pk, raw, args.index_attachments)
         progress.record_disposition("archived")
         if category == "INFECTED":
             progress.record_disposition("infected")
 
     try:
-        with ClamScanner() as scanner, ThreadPoolExecutor(max_workers=args.workers) as workers:
-            pending: deque[tuple[PendingScan, Future[bool]]] = deque()
-            for root in args.roots:
-                for source in source_messages(Path(root)):
-                    path, raw = source.path, source.raw
-                    progress.record_source(source)
-                    try:
-                        parsed = parse_message(raw, path, prior_dates.get(path))
-                    except Exception as error:
-                        digest = hashlib.sha256(raw).hexdigest()
-                        observe(source, "error", f"{type(error).__name__}: {error}", digest)
-                        catalog.commit()
-                        while pending:
-                            completed, future = pending.popleft()
-                            archive_scanned(completed, future.result())
-                            pending_identities.remove((completed.parsed.message_id, completed.parsed.sha256))
-                        raise RuntimeError(
-                            f"failed to parse {path} at source offset {source.source_offset}; sha256={digest}"
-                        ) from error
-                    prior_dates[path] = datetime.fromisoformat(parsed.date_utc)
-                    progress.record(parsed, source)
-                    if parsed.autosave:
-                        observe(source, "autosave-excluded", "X-Apple-Auto-Saved", parsed.sha256)
-                        catalog.commit()
-                        progress.record_disposition("autosave-excluded")
-                        continue
-                    identity = (parsed.message_id, parsed.sha256)
-                    existing = catalog.execute("SELECT message_pk FROM messages WHERE message_id_normalized = ? AND sha256 = ?", identity).fetchone()
-                    if existing is not None or identity in pending_identities:
-                        message_pk = None if existing is None else existing[0]
-                        detail = "same Message-ID and SHA-256" if existing is not None else "same Message-ID and SHA-256 pending scan"
-                        observe(source, "duplicate", detail, parsed.sha256, message_pk)
-                        catalog.commit()
-                        progress.record_disposition("duplicate")
-                        continue
-                    candidate = PendingScan(source=source, parsed=parsed)
-                    pending_identities.add(identity)
-                    pending.append((candidate, workers.submit(scanner.infected, raw)))
-                    if len(pending) >= args.workers * 2:
+        progress.set_phase("checking sources")
+        plans: list[SourcePlan] = []
+        for root in args.roots:
+            for source_file in source_files(Path(root)):
+                plan = plan_source(source_file)
+                if plan.skip:
+                    checkpoint(source_file, plan.sha256)
+                else:
+                    plans.append(plan)
+        if plans:
+            progress.set_phase("starting ClamAV")
+            with ClamScanner() as scanner, ThreadPoolExecutor(max_workers=args.workers) as workers:
+                progress.set_phase("ingesting")
+                pending: deque[tuple[PendingScan, Future[bool]]] = deque()
+
+                def drain_pending() -> None:
+                    while pending:
                         completed, future = pending.popleft()
                         archive_scanned(completed, future.result())
                         pending_identities.remove((completed.parsed.message_id, completed.parsed.sha256))
-            while pending:
-                completed, future = pending.popleft()
-                archive_scanned(completed, future.result())
-                pending_identities.remove((completed.parsed.message_id, completed.parsed.sha256))
+
+                for plan in plans:
+                    path = plan.source.path
+                    if plan.start_offset:
+                        prior = catalog.execute(
+                            "SELECT messages.date_utc FROM observations JOIN messages USING (message_pk) "
+                            "WHERE source_path = ? AND source_offset < ? ORDER BY source_offset DESC LIMIT 1",
+                            (str(path), plan.start_offset),
+                        ).fetchone()
+                        if prior is not None:
+                            prior_dates[path] = datetime.fromisoformat(prior[0])
+                    for source in source_messages(plan.source, plan.start_offset):
+                        path, raw = source.path, source.raw
+                        progress.record_source(source)
+                        try:
+                            parsed = parse_message(raw, path, prior_dates.get(path))
+                        except Exception as error:
+                            digest = hashlib.sha256(raw).hexdigest()
+                            observe(source, "error", f"{type(error).__name__}: {error}", digest)
+                            catalog.commit()
+                            drain_pending()
+                            raise RuntimeError(
+                                f"failed to parse {path} at source offset {source.source_offset}; sha256={digest}"
+                            ) from error
+                        prior_dates[path] = datetime.fromisoformat(parsed.date_utc)
+                        progress.record(parsed, source)
+                        if parsed.autosave:
+                            observe(source, "autosave-excluded", "X-Apple-Auto-Saved", parsed.sha256)
+                            catalog.commit()
+                            progress.record_disposition("autosave-excluded")
+                            continue
+                        identity = (parsed.message_id, parsed.sha256)
+                        existing = catalog.execute("SELECT message_pk FROM messages WHERE message_id_normalized = ? AND sha256 = ?", identity).fetchone()
+                        if existing is not None or identity in pending_identities:
+                            message_pk = None if existing is None else existing[0]
+                            detail = "same Message-ID and SHA-256" if existing is not None else "same Message-ID and SHA-256 pending scan"
+                            if message_pk is not None:
+                                catalog.executemany(
+                                    "INSERT OR IGNORE INTO metadata_defects(message_pk, field, detail) VALUES (?, ?, ?)",
+                                    ((message_pk, defect.field, defect.detail) for defect in parsed.defects),
+                                )
+                            observe(source, "duplicate", detail, parsed.sha256, message_pk)
+                            catalog.commit()
+                            progress.record_disposition("duplicate")
+                            continue
+                        candidate = PendingScan(source=source, parsed=parsed)
+                        pending_identities.add(identity)
+                        pending.append((candidate, workers.submit(scanner.infected, raw)))
+                        if len(pending) >= args.workers * 2:
+                            completed, future = pending.popleft()
+                            archive_scanned(completed, future.result())
+                            pending_identities.remove((completed.parsed.message_id, completed.parsed.sha256))
+                    drain_pending()
+                    checkpoint(plan.source, plan.sha256)
         catalog.commit()
         search.commit()
         succeeded = True

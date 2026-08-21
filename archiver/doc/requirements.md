@@ -27,7 +27,8 @@ All deliverables reside in one archive directory.
   case-insensitively, one of names in owner-names.txt; otherwise it is **Archive**.  The aliases are
   configurable, and the matched address is retained.
 * The date is the valid RFC 5322 `Date:` value; otherwise use the earliest
-  valid `Received:` timestamp.  A message lacking both inherits the prior
+  valid `Received:` timestamp.  Years before 1900 or more than one year in the
+  future are implausible and invalid.  A message lacking both inherits the prior
   resolved date in the same input mailbox stream.  If it is the only message
   in that file and the only file in its containing directory, derive the year
   from a four-digit year in the source path and record that fallback.  Never
@@ -58,6 +59,14 @@ requirement.
   have been obtained, a matching stored identity is skipped before ClamAV,
   text extraction, and MBOX writing.  A deliberate rescan/reindex mode is
   separate from normal ingest.
+* Every recognized local source file records its absolute path, nanosecond
+  modification time, byte length, complete-file SHA-256, last check time, and
+  completing ingest run.  Reingest always verifies content: a matching full
+  SHA-256 skips the file without parsing its messages.  If a file grew, ingest
+  first compares the SHA-256 of the old length.  A matching MBOX prefix followed
+  by a valid `From ` boundary resumes at that byte offset; all other changes
+  reprocess the whole file.  The checkpoint is updated only after the selected
+  region and its queued scans finish and the source metadata remains stable.
 
 ## Malware handling
 
@@ -69,10 +78,11 @@ requirement.
 * `ingest --workers N` controls the bounded ClamAV scan pool.  Its default is
   the detected CPU count capped at eight.  Source reading, duplicate decisions,
   SQLite commits, and canonical MBOX publication remain single-writer.
-* Ingest progress is written to standard error at startup, every two seconds,
-  and completion.  An interactive terminal receives a redraw-in-place
-  scoreboard; redirected output remains line-oriented.  Both report the run
-  start, elapsed time, processed count, average rate, resolved date range,
+* Ingest progress is written to standard error at startup, every 250
+  milliseconds, and completion.  An interactive terminal receives a
+  redraw-in-place scoreboard; redirected output remains line-oriented.  Both report the phase,
+  including `checking sources`, `starting ClamAV`, and `ingesting`, plus elapsed
+  time, processed message and completed source-file counts, average message rate, resolved date range,
   current year/current-year count, current source file, and source-file byte
   completion percentage.  It separately reports archived, duplicate
   (previously-seen and skipped), autosave-excluded, and infected counts.
@@ -87,10 +97,10 @@ requirement.
   resources, refreshes manifests for committed MBOX changes, and leaves a
   rerunnable error observation containing the source offset and raw SHA-256.
 * Before each MBOX append, ingest durably records the target, prior length,
-  message identity, and whether the target already existed. Catalog and search
-  changes remain uncommitted until the append is complete. On an exception or
-  the next startup after process death, an uncommitted append and search row
-  are removed; a catalogued append is retained and its journal is cleared.
+  message identity, and whether the target already existed. Catalog changes
+  remain uncommitted until the append is complete. On an exception or the next
+  startup after process death, an uncatalogued append is removed; a catalogued
+  append is hash-validated, retained, and its journal is cleared.
 * Completed and interrupted ingests print the archive report.  Reports always
   include year totals and default to the top 10 senders and recipients for the
   selected scope.  Addresses identified by Sent classification are suppressed
@@ -113,8 +123,8 @@ content.  It tracks at least:
   date and date source, category, byte length, ClamAV result;
 * parsed sender and recipient address foreign keys, and decoded/unfolded
   Subject headers; every parser-provided header value is normalized to text,
-  and malformed header encoding falls back safely without affecting
-  preservation;
+  malformed fields fall back independently without affecting preservation,
+  and their exception types and diagnostics are recorded;
 * each final MBOX filename, message byte offset, byte length, and archive
   generation; and
 * sources, ingest runs, exclusions, duplicates, validation results, and
@@ -140,6 +150,9 @@ configured, opt-in capability using Apache Tika; the Tika JAR is installed
 locally and checksum-verified, never run as a service.  It must be fully rebuildable from the
 canonical MBOX files and `archive.sqlite3`, and is not backed up as a required
 preservation object.
+Index extraction and insertion happen after canonical MBOX/catalog publication.
+An indexing failure is recorded as a metadata defect and does not reject mail;
+`refresh-index` repairs missing disposable content.
 
 `mailsearch` is a read-only command-line consumer of both databases.  It
 accepts ordinary full-text terms plus `to:ADDRESS` recipient, `from:ADDRESS`
@@ -178,6 +191,8 @@ the command fails before reading or writing an archive.
 
 * Recursive local-directory ingest recognizes MBOX streams, Apple Mail MBOX
   packages, Maildir, individual RFC 5322 files, and Apple `.emlx` files.
+  Local source-file fingerprints and append checkpoints use the physical file
+  bytes, including `.emlx` trailing metadata even though it is not message data.
 * `.emlx` input uses its leading decimal byte count to select exactly the
   RFC 5322 message; Apple's trailing plist metadata is not part of the
   message hash or output.
@@ -218,3 +233,7 @@ separate, one-name-per-line reusable classification input.  A local
 special-purpose search and message-viewing interface is a consumer of
 the two SQLite databases, not a reason to depend on Thunderbird or FoxTrot.
 No source mailbox is modified by this program.
+The current catalog schema is created only for a fresh archive and is versioned;
+there is no database migration or backfill path.  An unversioned or incompatible
+catalog is rejected. A fresh catalog is also refused beside existing canonical
+MBOX output because that would defeat deduplication.

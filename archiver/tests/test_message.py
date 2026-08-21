@@ -79,3 +79,48 @@ def test_raw_8bit_recipient_header_preserves_address() -> None:
 
     assert parsed.recipients == ["recipient@example.net"]
     assert parsed.sha256 == hashlib.sha256(raw).hexdigest()
+
+
+def test_malformed_base64_subject_falls_back_and_records_defect() -> None:
+    """Requirement: broken RFC 2047 metadata never prevents raw-message preservation."""
+    subject = "=?EUC-KR?B? KLGks00pvY?= trailing text"
+    raw = b"\n".join(
+        [
+            b"Message-ID: <spam@example>",
+            b"From: sender@example.net",
+            f"Subject: {subject}".encode(),
+            b"Date: Mon, 30 Jun 2003 19:50:44 -0400",
+            b"",
+            b"body",
+        ]
+    )
+
+    parsed = parse_message(raw, Path("/input/2003/message.eml"), None)
+
+    assert parsed.subject == subject
+    assert [(defect.field, defect.detail) for defect in parsed.defects] == [
+        ("Subject", "HeaderParseError: Base64 decoding error")
+    ]
+    assert parsed.sha256 == hashlib.sha256(raw).hexdigest()
+
+
+def test_implausible_date_uses_received_fallback() -> None:
+    """Requirement: an implausible year is not accepted for archive routing."""
+    raw = b"\n".join(
+        [
+            b"Message-ID: <bad-year@example>",
+            b"From: sender@example.net",
+            b"Date: Tue, 14 Sep 0104 12:00:00 +0000",
+            b"Received: by example.net; Mon, 30 Jun 2003 19:50:44 -0400",
+            b"",
+            b"body",
+        ]
+    )
+
+    parsed = parse_message(raw, Path("/input/2003/message.eml"), None)
+
+    assert parsed.date_source == "received"
+    assert parsed.date_utc.startswith("2003-06-30")
+    assert [(defect.field, defect.detail) for defect in parsed.defects] == [
+        ("Date", "invalid or implausible date")
+    ]
