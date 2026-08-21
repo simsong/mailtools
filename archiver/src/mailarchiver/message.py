@@ -11,11 +11,17 @@ from email import policy
 from email.parser import BytesParser
 from email.utils import getaddresses, parseaddr, parsedate_to_datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 YEAR = re.compile(r"^(19|20)\d{2}$")
+GOOGLE_CHAT_SENDER = re.compile(
+    r'^sender\s*\{.*?^\s*full_name:\s*"((?:[^"\\]|\\.)*)".*?^\}\s*$',
+    re.MULTILINE | re.DOTALL,
+)
+EMBEDDED_MBOX_ENVELOPE = re.compile(br"(?m)^>From [^\r\n]*\r?\n")
 
 
 class MetadataDefect(BaseModel):
@@ -38,6 +44,11 @@ class ParsedMessage(BaseModel):
 class DecodedHeaderValue(BaseModel):
     value: str
     defect: str | None = None
+
+
+class SenderIdentity(BaseModel):
+    value: str
+    source: Literal["from", "embedded-from", "sender", "google-chat", "missing"]
 
 
 def parse_date(value: str | None) -> datetime | None:
@@ -97,18 +108,60 @@ def header_values(message: Message, name: str, defects: list[MetadataDefect]) ->
         return []
 
 
+def sender_identity(message: Message, defects: list[MetadataDefect], raw: bytes | None = None) -> SenderIdentity:
+    """Resolve an email sender or a narrowly identified Google Chat actor."""
+    from_values = header_values(message, "From", defects)
+    try:
+        address = parseaddr(from_values[0] if from_values else "")[1].lower()
+    except Exception as error:
+        defects.append(MetadataDefect(field="From", detail=f"{type(error).__name__}: {error}"))
+        address = ""
+    if address:
+        return SenderIdentity(value=address, source="from")
+
+    if raw is not None and (match := EMBEDDED_MBOX_ENVELOPE.search(raw)) is not None:
+        header_end = raw.find(b"\n\n")
+        if header_end < 0 or match.start() < header_end:
+            embedded = BytesParser(policy=policy.compat32).parsebytes(raw[match.end():])
+            embedded_values = header_values(embedded, "From", defects)
+            try:
+                address = parseaddr(embedded_values[0] if embedded_values else "")[1].lower()
+            except Exception as error:
+                defects.append(MetadataDefect(field="From", detail=f"{type(error).__name__}: {error}"))
+                address = ""
+            if address:
+                defects.append(MetadataDefect(field="From", detail="used quoted embedded MBOX From header"))
+                return SenderIdentity(value=address, source="embedded-from")
+
+    sender_values = header_values(message, "Sender", defects)
+    try:
+        address = parseaddr(sender_values[0] if sender_values else "")[1].lower()
+    except Exception as error:
+        defects.append(MetadataDefect(field="Sender", detail=f"{type(error).__name__}: {error}"))
+        address = ""
+    if address:
+        defects.append(MetadataDefect(field="From", detail="missing or invalid; used Sender header"))
+        return SenderIdentity(value=address, source="sender")
+
+    if message.get("X-GM-THRID") is not None and not message.is_multipart():
+        payload = message.get_payload(decode=True)
+        text = payload.decode("utf-8", "replace") if isinstance(payload, bytes) else str(message.get_payload())
+        if "conversation_id:" in text and "event_id:" in text and (match := GOOGLE_CHAT_SENDER.search(text)):
+            name = match.group(1).replace(r'\"', '"').replace(r"\\", "\\")
+            defects.append(MetadataDefect(field="From", detail="missing; used Google Chat body identity"))
+            return SenderIdentity(value=f"{name} (Google Chat)", source="google-chat")
+
+    defects.append(MetadataDefect(field="From", detail="missing or invalid sender address"))
+    return SenderIdentity(value="", source="missing")
+
+
 def parse_message(raw: bytes, path: Path, prior_date: datetime | None) -> ParsedMessage:
     message = BytesParser(policy=policy.compat32).parsebytes(raw)
     digest = hashlib.sha256(raw).hexdigest()
     defects: list[MetadataDefect] = []
     message_id_values = header_values(message, "Message-ID", defects)
     message_id = (message_id_values[0] if message_id_values else "").strip().strip("<>").lower() or digest
-    from_values = header_values(message, "From", defects)
-    try:
-        sender = parseaddr(from_values[0] if from_values else "")[1].lower()
-    except Exception as error:
-        defects.append(MetadataDefect(field="From", detail=f"{type(error).__name__}: {error}"))
-        sender = ""
+    sender = sender_identity(message, defects, raw).value
     recipient_headers = [value for name in ("To", "Cc", "Bcc") for value in header_values(message, name, defects)]
     try:
         recipients = sorted({address.lower() for _, address in getaddresses(recipient_headers) if address})

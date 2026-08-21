@@ -38,6 +38,13 @@ All deliverables reside in one archive directory.
   created.
 * Each finished MBOX has a SHA-256 manifest recording its byte hash, message
   count, and ordered `(Message-ID, message SHA-256)` records.
+* A zero-byte source message retains the SHA-256 identity of empty bytes. Direct
+  retrieval removes only the single separator newline necessarily introduced
+  by standard MBOX encoding, and only when that exact empty digest is expected.
+* Because the standard-library MBOX writer does not distinguish an escaped
+  source `From ` line from an original literal `>From ` line, direct retrieval
+  considers the bounded possible interpretations and accepts only the one whose
+  SHA-256 matches the catalogued original bytes.
 
 The archive lives on the encrypted laptop filesystem.  BorgBackup and
 Backblaze provide independent backup; archive-internal encryption is not a
@@ -103,7 +110,9 @@ requirement.
   append is hash-validated, retained, and its journal is cleared.
 * Completed and interrupted ingests print the archive report.  Reports always
   include year totals and default to the top 10 senders and recipients for the
-  selected scope.  Addresses identified by Sent classification are suppressed
+  selected scope.  All report sections are aligned tables with right-aligned,
+  comma-grouped numeric columns. Correspondent tables include the first and
+  last message dates for each address. Addresses identified by Sent classification are suppressed
   from these correspondent lists only; they remain in the catalog and yearly
   people counts.  `--top 0` suppresses correspondent lists.
 * ClamAV outcomes are `clean`, `infected`, `unscannable`, or `scanner-error`,
@@ -121,8 +130,13 @@ content.  It tracks at least:
 
 * logical message identity: raw and normalized Message-ID, message SHA-256,
   date and date source, category, byte length, ClamAV result;
-* parsed sender and recipient address foreign keys, and decoded/unfolded
-  Subject headers; every parser-provided header value is normalized to text,
+* parsed sender and recipient identity foreign keys, and decoded/unfolded
+  Subject headers; sender identity uses a valid `From:` address, then a valid
+  `From:` inside a quoted legacy nested-MBOX record, then a valid RFC `Sender:`
+  address. A narrowly recognized Google Chat event with none of these
+  uses its embedded full name suffixed by `(Google Chat)`; all other missing
+  senders remain empty in metadata and display as `(missing sender)` in reports.
+  Every parser-provided header value is normalized to text,
   malformed fields fall back independently without affecting preservation,
   and their exception types and diagnostics are recorded;
 * each final MBOX filename, message byte offset, byte length, and archive
@@ -136,7 +150,8 @@ sorted or repacked.
 
 Email address text is normalized into `email_addresses(address_pk, address)`.
 `messages.sender_address_pk` and `recipients.address_pk` reference that table;
-recipient role and header order are intentionally not retained.
+recipient role and header order are intentionally not retained. The historical
+column name also stores explicitly labeled non-email Google Chat identities.
 
 ## Search database
 
@@ -193,9 +208,15 @@ the command fails before reading or writing an archive.
   packages, Maildir, individual RFC 5322 files, and Apple `.emlx` files.
   Local source-file fingerprints and append checkpoints use the physical file
   bytes, including `.emlx` trailing metadata even though it is not message data.
+  Directory traversal must surface missing paths and permission failures rather
+  than silently treating an unreadable mailbox as empty. Direct access to
+  `~/Library/Mail` may require Full Disk Access for the invoking application.
 * `.emlx` input uses its leading decimal byte count to select exactly the
   RFC 5322 message; Apple's trailing plist metadata is not part of the
-  message hash or output.
+  message hash or output. Apple `.partial.emlx` input is rejected because its
+  attachment payloads are detached and reconstructing a message would not
+  preserve the original RFC 5322 bytes. Apple Mail databases, plist files,
+  attachment directories, and `.emlxpart` fragments are not separate messages.
 * Gmail ingest uses OAuth and the Gmail API for incremental acquisition of
   raw messages and labels.  It supports a rolling `--days N` mode using
   Gmail's `newer_than:Nd` query.  Google Takeout MBOX is supported as an offline,
@@ -221,7 +242,9 @@ the command fails before reading or writing an archive.
   checks manifests, offsets, and database rows, and reports duplicate-policy
   violations.
 * `refresh-index` rebuilds the disposable FTS database. `refresh-subjects`
-  rebuilds decoded catalog subjects from canonical MBOX files. `refresh-locations`
+  rebuilds decoded catalog subjects from canonical MBOX files. `refresh-senders`
+  repairs blank catalog sender identities from hash-verified canonical locations
+  and applies owner-name Sent classification without changing MBOX bytes. `refresh-locations`
   rebuilds catalogued MBOX offsets from canonical MBOX files. `review` queries the
   committed source-observation log by run, source, and disposition.
 

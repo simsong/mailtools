@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import mailbox
+import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Literal
@@ -38,6 +39,10 @@ class SourceHashes(BaseModel):
     sha256: str
 
 
+class IncompleteAppleMailMessageError(ValueError):
+    """An Apple Mail partial message cannot preserve detached attachment bytes."""
+
+
 def emlx_bytes(path: Path) -> bytes:
     with path.open("rb") as source:
         length = int(source.readline().strip())
@@ -57,11 +62,28 @@ def is_maildir_message(path: Path) -> bool:
 
 
 def source_files(source: Path) -> Iterator[SourceFile]:
-    paths = (source,) if source.is_file() else (path for path in source.rglob("*") if path.is_file())
+    if not source.exists():
+        raise FileNotFoundError(source)
+    if source.is_file():
+        paths: Iterator[Path] = iter((source,))
+    else:
+        def raise_walk_error(error: OSError) -> None:
+            raise error
+
+        paths = (
+            Path(directory) / filename
+            for directory, _subdirectories, filenames in os.walk(source, onerror=raise_walk_error)
+            for filename in filenames
+        )
     for path in paths:
         path = path.resolve()
         kind: Literal["emlx", "mbox", "message"] | None = None
-        if path.suffix == ".emlx":
+        if path.name.lower().endswith(".partial.emlx"):
+            raise IncompleteAppleMailMessageError(
+                f"Apple Mail partial message omits detached attachment bytes: {path}; "
+                "export the mailbox from Apple Mail before ingest"
+            )
+        if path.suffix.lower() == ".emlx":
             kind = "emlx"
         elif is_mbox(path):
             kind = "mbox"

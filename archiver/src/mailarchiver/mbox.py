@@ -35,6 +35,7 @@ class PendingPublication(BaseModel):
 
 
 PUBLICATION_JOURNAL = ".mailarchiver-pending.json"
+MAX_AMBIGUOUS_FROM_LINES = 12
 
 
 class PublicationRecovery(str, Enum):
@@ -73,9 +74,14 @@ def recover_publication(archive: Path, catalog: sqlite3.Connection, search: sqli
     ).fetchone()
     if committed is not None:
         filename, offset, length = committed
-        raw = read_location(archive / filename, MboxLocation(byte_offset=offset, byte_length=length))
-        if hashlib.sha256(raw).hexdigest() != publication.sha256:
-            raise RuntimeError(f"committed pending publication failed validation for {filename}")
+        try:
+            read_verified_location(
+                archive / filename,
+                MboxLocation(byte_offset=offset, byte_length=length),
+                publication.sha256,
+            )
+        except ValueError as error:
+            raise RuntimeError(f"committed pending publication failed validation for {filename}") from error
         clear_publication_journal(archive)
         return PublicationRecovery.COMMITTED
     path = archive / publication.filename
@@ -133,15 +139,49 @@ def add_message(box: mailbox.mbox, path: Path, raw: bytes) -> MboxLocation:
         raise DiskFullError(f"disk full while writing {path}") from error
 
 
-def read_location(path: Path, location: MboxLocation) -> bytes:
-    """Read one mboxrd record directly and restore its RFC 5322 message bytes."""
+def _read_stored_payload(path: Path, location: MboxLocation) -> bytes:
     with path.open("rb") as source:
         source.seek(location.byte_offset)
         record = source.read(location.byte_length)
     envelope, separator, raw = record.partition(b"\n")
     if not separator or not envelope.startswith(b"From "):
         raise ValueError(f"invalid MBOX location in {path}")
-    return raw.replace(b"\n>From ", b"\nFrom ")
+    return raw
+
+
+def read_location_candidates(path: Path, location: MboxLocation):
+    """Yield possible originals for the standard library's ambiguous From quoting."""
+    stored = _read_stored_payload(path, location)
+    lines = stored.splitlines(keepends=True)
+    ambiguous = [index for index, line in enumerate(lines) if line.startswith(b">From ")]
+    masks = [(1 << len(ambiguous)) - 1, 0]
+    if len(ambiguous) <= MAX_AMBIGUOUS_FROM_LINES:
+        masks.extend(range(1 << len(ambiguous)))
+    seen: set[bytes] = set()
+    for mask in masks:
+        candidate = list(lines)
+        for bit, index in enumerate(ambiguous):
+            if mask & (1 << bit):
+                candidate[index] = candidate[index][1:]
+        raw = b"".join(candidate)
+        if raw not in seen:
+            seen.add(raw)
+            yield raw
+    if stored == b"\n":
+        yield b""
+
+
+def read_location(path: Path, location: MboxLocation) -> bytes:
+    """Read the conventional all-quoted-From interpretation of one MBOX record."""
+    return next(read_location_candidates(path, location))
+
+
+def read_verified_location(path: Path, location: MboxLocation, expected_sha256: str) -> bytes:
+    """Select the original MBOX interpretation by its catalogued identity."""
+    for raw in read_location_candidates(path, location):
+        if hashlib.sha256(raw).hexdigest() == expected_sha256:
+            return raw
+    raise ValueError(f"MBOX location hash mismatch in {path}")
 
 
 def write_manifests(archive: Path) -> None:

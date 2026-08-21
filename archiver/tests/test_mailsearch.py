@@ -77,6 +77,86 @@ def test_mailsearch_limit_zero_and_number_print_original_message(tmp_path: Path)
     assert displayed.stdout == render_message(raw, False, False).encode()
 
 
+def test_numbered_empty_message_restores_zero_source_bytes(tmp_path: Path) -> None:
+    """Requirement: MBOX's separator newline does not change an empty message's identity."""
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    catalog = create_catalog(archive / "archive.sqlite3")
+    search = create_search(archive / "search.sqlite3")
+    try:
+        blank = address_pk(catalog, "")
+        catalog.execute(
+            "INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) "
+            "VALUES (?, ?, ?, '', '2024-01-01T00:00:00+00:00', 'path-year', 'Archive')",
+            (hashlib.sha256(b"").hexdigest(), hashlib.sha256(b"").hexdigest(), blank),
+        )
+        catalog.commit()
+    finally:
+        catalog.close()
+        search.close()
+    box = mailbox.mbox(archive / "2024-Archive1.mbox")
+    try:
+        box.add(b"")
+        box.flush()
+    finally:
+        box.close()
+    refreshed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert refreshed.returncode == 0, refreshed.stderr
+
+    displayed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver.mailsearch", "--archive", str(archive), "--mime", "1"],
+        capture_output=True,
+        check=False,
+    )
+
+    assert displayed.returncode == 0, displayed.stderr
+    assert displayed.stdout == b""
+
+
+def test_numbered_message_preserves_literal_quoted_from_line(tmp_path: Path) -> None:
+    """Requirement: identity disambiguates an original >From line from MBOX quoting."""
+    archive, _ = make_archive(tmp_path)
+    raw = b"Message-ID: <quoted@example>\nDate: Thu, 1 Feb 2024 12:00:00 +0000\n\n>From original body\n"
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        blank = address_pk(catalog, "")
+        catalog.execute(
+            "INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) "
+            "VALUES ('quoted@example', ?, ?, '', '2024-01-01T00:00:00+00:00', 'date', 'Archive')",
+            (hashlib.sha256(raw).hexdigest(), blank),
+        )
+        catalog.commit()
+    finally:
+        catalog.close()
+    box = mailbox.mbox(archive / "2024-Archive1.mbox")
+    try:
+        box.add(raw)
+        box.flush()
+    finally:
+        box.close()
+    refreshed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert refreshed.returncode == 0, refreshed.stderr
+
+    displayed = subprocess.run(
+        [sys.executable, "-m", "mailarchiver.mailsearch", "--archive", str(archive), "--mime", "2"],
+        capture_output=True,
+        check=False,
+    )
+
+    assert displayed.returncode == 0, displayed.stderr
+    assert displayed.stdout == raw
+
+
 def test_message_views_select_headers_and_preferred_mime_parts() -> None:
     """Requirement: display defaults to text/plain, supports HTML, and exposes full headers on request."""
     raw = (
@@ -162,6 +242,54 @@ def test_refresh_subjects_rewrites_legacy_catalog_values(tmp_path: Path) -> None
     try:
         catalog.execute("UPDATE messages SET subject = ?", ("=?utf-8?B?UmU6IFJvYXN0ZWQgQ2F1bGlmbG93ZXI=?=",))
         catalog.commit()
+    finally:
+        catalog.close()
+
+
+def test_refresh_senders_repairs_blank_catalog_identity(tmp_path: Path) -> None:
+    """Requirement: sender repair reads verified canonical bytes and updates derived metadata only."""
+    archive, _ = make_archive(tmp_path)
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        blank = address_pk(catalog, "")
+        catalog.execute("UPDATE messages SET sender_address_pk = ?", (blank,))
+        catalog.execute(
+            "INSERT INTO metadata_defects(message_pk, field, detail) VALUES "
+            "(1, 'From', 'missing or invalid sender address')"
+        )
+        catalog.commit()
+    finally:
+        catalog.close()
+    owners = tmp_path / "owners.txt"
+    owners.write_text("sender@example.net\n")
+
+    refreshed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "mailarchiver",
+            "--archive",
+            str(archive),
+            "refresh-senders",
+            "--owner-names-file",
+            str(owners),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert refreshed.returncode == 0, refreshed.stderr
+    assert ["from", "1"] in [line.split() for line in refreshed.stdout.splitlines()]
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        assert catalog.execute(
+            "SELECT address, category FROM messages JOIN email_addresses "
+            "ON email_addresses.address_pk = messages.sender_address_pk"
+        ).fetchone() == ("sender@example.net", "Sent")
+        assert catalog.execute(
+            "SELECT COUNT(*) FROM metadata_defects WHERE detail = 'missing or invalid sender address'"
+        ).fetchone() == (0,)
     finally:
         catalog.close()
     refreshed = subprocess.run(

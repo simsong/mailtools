@@ -90,7 +90,7 @@ def test_ingest_routes_preserves_and_indexes_messages(
     assert "ingesting:" in result.stderr
     assert "file=" in result.stderr
     assert "seen_skipped=" in result.stderr
-    assert "year\tsent\treceived\tpeople" in result.stdout
+    assert "  year    sent    received    people" in result.stdout
     assert "top senders" in result.stdout
 
     assert mailbox_message_bytes(archive / "2024-Sent1.mbox") == [raw["sent"]]
@@ -272,10 +272,31 @@ def test_report_counts_years_people_and_correspondents(source_mail: tuple[Path, 
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "year\tsent\treceived\tpeople\n2024\t1\t3\t3" in result.stdout
-    assert "top senders\nsender@example.net\t3" in result.stdout
-    assert "top recipients\nrecipient@example.net\t4" in result.stdout
+    lines = result.stdout.splitlines()
+    assert "  2024       1           3         3" in lines
+    assert "sender@example.net           3  2024-01-01  2024-01-04" in lines
+    assert "recipient@example.net           4  2024-01-01  2024-01-04" in lines
     assert "simsong@example.com" not in result.stdout
+
+
+def test_report_labels_missing_sender(tmp_path: Path) -> None:
+    """Requirement: unresolved sender metadata is explicit rather than a blank table row."""
+    source = tmp_path / "2024" / "message.eml"
+    source.parent.mkdir()
+    source.write_bytes(b"Message-ID: <missing@example>\nDate: Thu, 1 Feb 2024 12:00:00 +0000\n\nbody\n")
+    archive = tmp_path / "archive"
+    owner_names = Path(__file__).parents[1] / "owner-names.txt"
+    assert_success(run_ingest(source, archive, owner_names))
+
+    result = subprocess.run(
+        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "report"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "(missing sender)" in result.stdout
 
 
 def test_interrupt_stops_cleanly(source_mail: tuple[Path, dict[str, bytes]], tmp_path: Path) -> None:
@@ -306,7 +327,7 @@ def test_interrupt_stops_cleanly(source_mail: tuple[Path, dict[str, bytes]], tmp
     assert process.returncode == 130, stdout + stderr
     assert "interrupted:" in stderr
     assert "Traceback" not in stderr
-    assert stdout.startswith("year\tsent\treceived\tpeople\n")
+    assert stdout.startswith("year    sent    received    people\n")
 
 
 def test_parser_failure_records_source_identity_and_failed_run(tmp_path: Path) -> None:
@@ -354,3 +375,28 @@ def test_fresh_catalog_is_refused_beside_existing_mbox(tmp_path: Path) -> None:
     assert "use a new empty archive directory" in result.stderr
     assert existing.read_bytes() == b"existing canonical bytes\n"
     assert not (archive / "archive.sqlite3").exists()
+
+
+@pytest.mark.parametrize(
+    ("source_name", "contents", "diagnostic"),
+    [
+        ("missing", None, "source not found:"),
+        ("7.partial.emlx", b"5\nbody\n", "unsupported source: Apple Mail partial message"),
+    ],
+)
+def test_unusable_source_fails_cleanly(
+    tmp_path: Path, source_name: str, contents: bytes | None, diagnostic: str
+) -> None:
+    """Requirement: missing or incomplete Apple Mail input cannot look successful."""
+    source = tmp_path / source_name
+    if contents is not None:
+        source.write_bytes(contents)
+    archive = tmp_path / "archive"
+    owner_names = Path(__file__).parents[1] / "owner-names.txt"
+
+    result = run_ingest(source, archive, owner_names)
+
+    assert result.returncode == 1
+    assert diagnostic in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not list(archive.glob("*.mbox"))

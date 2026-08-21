@@ -11,7 +11,7 @@ import sqlite3
 import sys
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from email import policy
@@ -19,10 +19,11 @@ from email.parser import BytesParser
 from pathlib import Path
 
 from pydantic import BaseModel
+from tabulate import tabulate
 
 from .archive_path import add_archive_argument, require_archive
 from .catalog import address_pk, create_catalog, create_search, owner_tokens
-from .message import ParsedMessage, decoded_header, parse_message
+from .message import ParsedMessage, decoded_header, parse_message, sender_identity
 from .mbox import (
     DiskFullError,
     MboxLocation,
@@ -32,13 +33,15 @@ from .mbox import (
     clear_publication_journal,
     journal_publication,
     mailbox_name,
-    read_location,
+    read_location_candidates,
+    read_verified_location,
     recover_publication,
     write_manifests,
 )
 from .scanner import ClamScanner
 from .search import index_message, index_message_safely
 from .sources import (
+    IncompleteAppleMailMessageError,
     SourceFile,
     SourceMessage,
     SourcePlan,
@@ -262,7 +265,7 @@ def ingest(args: argparse.Namespace) -> None:
 
     def archive_scanned(candidate: PendingScan, infected: bool) -> None:
         raw, parsed = candidate.source.raw, candidate.parsed
-        category = "INFECTED" if infected else ("Sent" if any(token in parsed.sender for token in owners) else "Archive")
+        category = "INFECTED" if infected else ("Sent" if any(token in parsed.sender.lower() for token in owners) else "Archive")
         mbox_path = archive / mailbox_name(parsed, category)
         file_existed = mbox_path.exists()
         publication = PendingPublication(
@@ -476,9 +479,15 @@ def print_report(archive: Path, years: tuple[int, int] | None, top: int | None) 
             "LEFT JOIN people USING (year) GROUP BY summary.year ORDER BY summary.year",
             parameters,
         )
-        print("year\tsent\treceived\tpeople")
-        for year, sent, received, people in rows:
-            print(f"{year}\t{sent}\t{received}\t{people}")
+        print(
+            tabulate(
+                rows,
+                headers=("year", "sent", "received", "people"),
+                tablefmt="simple",
+                intfmt=",",
+                colalign=("right", "right", "right", "right"),
+            )
+        )
         if top is not None and top > 0:
             heading = lambda text: f"\033[1m{text}\033[0m" if sys.stdout.isatty() else text
             owner_addresses = (
@@ -486,30 +495,49 @@ def print_report(archive: Path, years: tuple[int, int] | None, top: int | None) 
             )
             print()
             print(heading("top senders"))
-            for address, count in catalog.execute(
+            senders = catalog.execute(
                 "WITH relevant AS (SELECT * FROM messages" + clause + "), "
                 + owner_addresses
-                + "SELECT email_addresses.address, COUNT(*) FROM relevant "
+                + "SELECT COALESCE(NULLIF(email_addresses.address, ''), '(missing sender)'), COUNT(*), "
+                "MIN(substr(relevant.date_utc, 1, 10)), "
+                "MAX(substr(relevant.date_utc, 1, 10)) FROM relevant "
                 "JOIN email_addresses ON email_addresses.address_pk = relevant.sender_address_pk "
                 "LEFT JOIN owner_addresses ON owner_addresses.sender_address_pk = relevant.sender_address_pk "
                 "WHERE owner_addresses.sender_address_pk IS NULL "
                 "GROUP BY email_addresses.address ORDER BY COUNT(*) DESC, email_addresses.address LIMIT ?",
                 (*parameters, top),
-            ):
-                print(f"{address}\t{count}")
+            )
+            print(
+                tabulate(
+                    senders,
+                    headers=("sender", "messages", "first", "last"),
+                    tablefmt="simple",
+                    intfmt=",",
+                    colalign=("left", "right", "left", "left"),
+                )
+            )
             print()
             print(heading("top recipients"))
-            for address, count in catalog.execute(
+            recipients = catalog.execute(
                 "WITH relevant AS (SELECT * FROM messages" + clause + "), "
                 + owner_addresses
-                + "SELECT email_addresses.address, COUNT(*) FROM recipients "
+                + "SELECT email_addresses.address, COUNT(*), MIN(substr(relevant.date_utc, 1, 10)), "
+                "MAX(substr(relevant.date_utc, 1, 10)) FROM recipients "
                 "JOIN relevant USING (message_pk) JOIN email_addresses USING (address_pk) "
                 "LEFT JOIN owner_addresses ON owner_addresses.sender_address_pk = email_addresses.address_pk "
                 "WHERE owner_addresses.sender_address_pk IS NULL "
                 "GROUP BY email_addresses.address ORDER BY COUNT(*) DESC, email_addresses.address LIMIT ?",
                 (*parameters, top),
-            ):
-                print(f"{address}\t{count}")
+            )
+            print(
+                tabulate(
+                    recipients,
+                    headers=("recipient", "messages", "first", "last"),
+                    tablefmt="simple",
+                    intfmt=",",
+                    colalign=("left", "right", "left", "left"),
+                )
+            )
     finally:
         catalog.close()
 
@@ -567,6 +595,73 @@ def refresh_subjects(args: argparse.Namespace) -> None:
         catalog.close()
 
 
+def refresh_senders(args: argparse.Namespace) -> None:
+    """Repair blank catalog senders from verified canonical MBOX records."""
+    archive = Path(args.archive)
+    catalog = create_catalog(archive / "archive.sqlite3")
+    owners = owner_tokens(Path(args.owner_names_file))
+    counts: Counter[str] = Counter()
+    try:
+        rows = catalog.execute(
+            "SELECT m.message_pk, m.sha256, m.category, g.filename, l.byte_offset, l.byte_length "
+            "FROM messages m JOIN email_addresses a ON a.address_pk = m.sender_address_pk "
+            "JOIN locations l USING (message_pk) JOIN mbox_generations g USING (generation_pk) "
+            "WHERE a.address = '' ORDER BY m.message_pk"
+        ).fetchall()
+        catalog.execute("BEGIN")
+        for message_pk, expected_sha256, category, filename, offset, length in rows:
+            try:
+                raw = read_verified_location(
+                    archive / filename,
+                    MboxLocation(byte_offset=offset, byte_length=length),
+                    expected_sha256,
+                )
+            except ValueError as error:
+                raise ValueError(f"canonical MBOX hash mismatch for message {message_pk}") from error
+            message = BytesParser(policy=policy.compat32).parsebytes(raw)
+            defects = []
+            identity = sender_identity(message, defects, raw)
+            counts[identity.source] += 1
+            catalog.executemany(
+                "INSERT OR IGNORE INTO metadata_defects(message_pk, field, detail) VALUES (?, ?, ?)",
+                ((message_pk, defect.field, defect.detail) for defect in defects),
+            )
+            if not identity.value:
+                continue
+            updated_category = (
+                "Sent"
+                if category != "INFECTED" and any(token in identity.value.lower() for token in owners)
+                else category
+            )
+            catalog.execute(
+                "UPDATE messages SET sender_address_pk = ?, category = ? WHERE message_pk = ?",
+                (address_pk(catalog, identity.value), updated_category, message_pk),
+            )
+        catalog.execute(
+            "DELETE FROM metadata_defects WHERE field = 'From' AND detail = 'missing or invalid sender address' "
+            "AND message_pk IN (SELECT message_pk FROM messages JOIN email_addresses "
+            "ON email_addresses.address_pk = messages.sender_address_pk WHERE email_addresses.address != '')"
+        )
+        catalog.commit()
+    except BaseException:
+        catalog.rollback()
+        raise
+    finally:
+        catalog.close()
+    print(
+        tabulate(
+            [
+                (source, counts[source])
+                for source in ("from", "embedded-from", "sender", "google-chat", "missing")
+            ],
+            headers=("source", "messages"),
+            tablefmt="simple",
+            intfmt=",",
+            colalign=("left", "right"),
+        )
+    )
+
+
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -596,8 +691,21 @@ def refresh_locations(args: argparse.Namespace) -> None:
             ).fetchone()
             assert generation is not None
             for start, stop in offsets:
-                raw = read_location(path, MboxLocation(byte_offset=start, byte_length=stop - start))
-                row = catalog.execute("SELECT message_pk FROM messages WHERE sha256 = ?", (hashlib.sha256(raw).hexdigest(),)).fetchone()
+                location = MboxLocation(byte_offset=start, byte_length=stop - start)
+                matches = {
+                    row[0]
+                    for raw in read_location_candidates(path, location)
+                    if (
+                        row := catalog.execute(
+                            "SELECT message_pk FROM messages WHERE sha256 = ?",
+                            (hashlib.sha256(raw).hexdigest(),),
+                        ).fetchone()
+                    )
+                    is not None
+                }
+                row = None if not matches else (matches.pop(),)
+                if matches:
+                    raise ValueError(f"ambiguous MBOX identity for {path} at byte {start}")
                 if row is None:
                     raise ValueError(f"MBOX message missing from catalog: {path} at byte {start}")
                 message_pk = int(row[0])
@@ -643,6 +751,9 @@ def main() -> int:
     refresh_parser.set_defaults(function=refresh_index)
     subjects_parser = commands.add_parser("refresh-subjects")
     subjects_parser.set_defaults(function=refresh_subjects)
+    senders_parser = commands.add_parser("refresh-senders")
+    senders_parser.add_argument("--owner-names-file", required=True)
+    senders_parser.set_defaults(function=refresh_senders)
     locations_parser = commands.add_parser("refresh-locations")
     locations_parser.set_defaults(function=refresh_locations)
     args = parser.parse_args()
@@ -655,6 +766,19 @@ def main() -> int:
         return 130
     except DiskFullError as error:
         print(f"disk full: {error}; archive stopped cleanly", file=sys.stderr, flush=True)
+        return 1
+    except IncompleteAppleMailMessageError as error:
+        print(f"unsupported source: {error}", file=sys.stderr, flush=True)
+        return 1
+    except PermissionError as error:
+        print(
+            f"source access denied: {error}; grant Full Disk Access to the terminal or application running mailarchiver",
+            file=sys.stderr,
+            flush=True,
+        )
+        return 1
+    except FileNotFoundError as error:
+        print(f"source not found: {error}", file=sys.stderr, flush=True)
         return 1
     if args.command == "ingest":
         print_report(Path(args.archive), None, DEFAULT_REPORT_TOP)

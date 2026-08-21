@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from .archive_path import add_archive_argument, require_archive
 from .message import decoded_header
-from .mbox import MboxLocation, read_location
+from .mbox import MboxLocation, read_verified_location
 from .search import decoded_part, html_text, is_attachment
 
 DEFAULT_LIMIT = 10
@@ -164,9 +164,14 @@ def print_message(archive: Path, message_pk: int, full_headers: bool, html: bool
     target, filename, offset, length = row
     if filename is None:
         raise ValueError(f"message {message_pk} has no MBOX location; run mailarchiver refresh-locations")
-    raw = read_location(archive / filename, MboxLocation(byte_offset=offset, byte_length=length))
-    if hashlib.sha256(raw).hexdigest() != target:
-        raise ValueError(f"MBOX location hash mismatch for message {message_pk}")
+    try:
+        raw = read_verified_location(
+            archive / filename,
+            MboxLocation(byte_offset=offset, byte_length=length),
+            target,
+        )
+    except ValueError as error:
+        raise ValueError(f"MBOX location hash mismatch for message {message_pk}") from error
     if mime:
         sys.stdout.buffer.write(raw)
     else:

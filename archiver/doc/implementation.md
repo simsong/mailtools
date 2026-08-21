@@ -69,9 +69,17 @@ prints the partial-run archive report before returning 130.  An `ENOSPC` append 
 possible and reports a controlled nonzero stop.  Acceptance coverage includes
 the checked-in MBOX/EMLX corpus, source checkpoints, append resumption,
 malformed metadata, publication recovery, and disposable-index failure.
+Modern Apple Mail package traversal recognizes complete
+`Data/.../Messages/*.emlx` payloads and ignores MailData, plist, and detached
+attachment files. It reports missing paths and macOS Full Disk Access failures
+instead of treating them as empty input. `.partial.emlx` is rejected because
+the cached RFC 5322 representation omits detached attachment bytes; use Apple
+Mail's mailbox export to obtain a complete MBOX source.
 
 Successful ingests also print the archive report after finalization.  The
 report shows per-year totals plus the top 10 senders and recipients by default;
+all sections use aligned tables with right-aligned, comma-grouped numbers, and
+the correspondent tables show each address's first and last message dates.
 addresses identified by a `Sent` message are filtered from correspondent lists
 only, not from stored metadata or yearly people totals.  `report --top 0`
 suppresses those lists.
@@ -105,6 +113,14 @@ Compatibility-policy header objects, including raw 8-bit legacy `Received:`
 and recipient fields, are converted to text before metadata parsing. Each
 derived header field has an independent exception boundary. Broken RFC 2047
 subjects retain their unfolded source text, and metadata defects are catalogued.
+Sender resolution prefers a valid `From:` address, falls back to the RFC
+`From:` inside a quoted legacy nested-MBOX record and then the RFC `Sender:`
+header. It recognizes Google Chat event payloads only when their Gmail thread
+header and event fields are present. Chat actors are stored as
+`Full Name (Google Chat)` so they cannot be mistaken for email addresses.
+Reports render the remaining empty sender identity as `(missing sender)`.
+`refresh-senders --owner-names-file FILE` applies this policy transactionally
+to blank historical catalog rows through hash-verified canonical locations.
 Parsed dates outside 1900 through the next calendar year are rejected before
 the normal Received/previous-message/path fallbacks.
 
@@ -215,6 +231,14 @@ Writers produce an envelope `From ` line plus mboxrd-escaped message bytes.
 They track the byte offset and byte length of each complete record.  Output
 selection enforces the 3.75 GiB limit before appending; the directory contains
 no nested per-message files.
+For an original zero-byte message, standard MBOX contributes one payload
+separator newline. Direct retrieval maps exactly that one-byte representation
+back to empty bytes only when the catalogued SHA-256 is the empty-byte digest.
+The standard-library writer's `>From ` representation is ambiguous when the
+source already contained a literal `>From ` line. The reader enumerates a
+bounded set of quote interpretations and selects only the candidate matching
+the authoritative raw-message SHA-256; unresolved high-ambiguity input fails
+closed.
 
 At run completion, sort each touched normal mailbox by `(resolved_date_utc,
 sha256)`.  The sorter writes a new MBOX and manifest beside the original,

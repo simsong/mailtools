@@ -124,3 +124,70 @@ def test_implausible_date_uses_received_fallback() -> None:
     assert [(defect.field, defect.detail) for defect in parsed.defects] == [
         ("Date", "invalid or implausible date")
     ]
+
+
+def test_sender_header_falls_back_when_from_is_missing() -> None:
+    """Requirement: a real Sender header supplies a missing From identity."""
+    raw = b"Sender: fallback@example.net\nDate: Thu, 1 Feb 2024 12:00:00 +0000\n\nbody\n"
+
+    parsed = parse_message(raw, Path("/input/2024/message.eml"), None)
+
+    assert parsed.sender == "fallback@example.net"
+    assert ("From", "missing or invalid; used Sender header") in [
+        (defect.field, defect.detail) for defect in parsed.defects
+    ]
+
+
+def test_google_chat_event_uses_embedded_actor_name() -> None:
+    """Requirement: recognized Google Chat events expose a named non-email actor."""
+    raw = b"\n".join(
+        [
+            b"X-GM-THRID: 1234",
+            b"",
+            b"sender {",
+            b'  full_name: "Simson Garfinkel"',
+            b"}",
+            b'conversation_id: "conversation"',
+            b"timestamp: 1369948644835641",
+            b'event_id: "event"',
+        ]
+    )
+
+    parsed = parse_message(raw, Path("/input/2013/message.eml"), None)
+
+    assert parsed.sender == "Simson Garfinkel (Google Chat)"
+    assert ("From", "missing; used Google Chat body identity") in [
+        (defect.field, defect.detail) for defect in parsed.defects
+    ]
+
+
+def test_arbitrary_body_sender_text_is_not_treated_as_identity() -> None:
+    """Requirement: ordinary body text cannot masquerade as Google Chat metadata."""
+    raw = b'Date: Thu, 1 Feb 2024 12:00:00 +0000\n\nsender { full_name: "Impostor" }\n'
+
+    parsed = parse_message(raw, Path("/input/2024/message.eml"), None)
+
+    assert parsed.sender == ""
+
+
+def test_quoted_nested_mbox_from_header_is_recovered() -> None:
+    """Requirement: legacy nested MBOX status prefixes do not hide a valid From header."""
+    raw = b"\n".join(
+        [
+            b"Status: R",
+            b"X-Status:",
+            b">From nested@example.net  Sat Nov 23 07:40:54 2002",
+            b"Return-Path: <nested@example.net>",
+            b"From: Nested Sender <nested@example.net>",
+            b"Date: Sat, 23 Nov 2002 07:40:54 +0000",
+            b"",
+            b"body",
+        ]
+    )
+
+    parsed = parse_message(raw, Path("/input/2002/message.eml"), None)
+
+    assert parsed.sender == "nested@example.net"
+    assert ("From", "used quoted embedded MBOX From header") in [
+        (defect.field, defect.detail) for defect in parsed.defects
+    ]
