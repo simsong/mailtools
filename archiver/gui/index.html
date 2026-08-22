@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; frame-src blob: data:; object-src 'none'; connect-src 'self'">
+    <title>Mail Archive</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main id="app">
+      <header class="toolbar no-print">
+        <button id="choose-archive" type="button">Choose Archive…</button>
+        <form id="search-form" role="search">
+          <input id="search" type="search" autocomplete="off" spellcheck="false" placeholder='Search mail — from:alice@example.com subject:"annual report"'>
+        </form>
+        <span id="archive-label"></span>
+      </header>
+
+      <section class="workspace">
+        <aside class="results no-print">
+          <div class="result-controls">
+            <div id="result-status" class="status">Choose an archive to begin.</div>
+            <label for="sort-by">Sort:</label>
+            <select id="sort-by" aria-label="Sort messages by">
+              <option value="date">Date</option>
+              <option value="subject">Subject</option>
+              <option value="sender">Sender</option>
+            </select>
+            <button id="sort-direction" type="button" aria-label="Sort descending" title="Sort descending">↓</button>
+          </div>
+          <div id="result-list" role="listbox" aria-label="Search results" tabindex="0"></div>
+          <button id="load-more" class="load-more" type="button" hidden>Load more</button>
+        </aside>
+
+        <article class="message" id="message-pane">
+          <div id="message-content" hidden>
+            <div class="message-actions no-print">
+              <select id="part-select" aria-label="Message part"></select>
+              <button id="remote-content" type="button" hidden>Load Remote Content</button>
+              <button id="save-message" type="button">Save Message…</button>
+              <button id="print-message" type="button">Print…</button>
+            </div>
+            <div id="message-well">
+              <div class="message-summary">
+                <div class="message-heading">
+                  <h1 id="message-subject"></h1>
+                  <dl id="message-headers"></dl>
+                </div>
+                <div id="message-file-well" class="message-file-well no-print" draggable="true" title="Drag this message to Finder" role="img" aria-label="Drag message file to Finder">
+                  <span class="message-file-icon" aria-hidden="true">✉︎</span>
+                  <span id="message-file-name">Message.eml</span>
+                </div>
+              </div>
+              <div id="body-view"></div>
+              <section id="attachment-section" class="attachments no-print" hidden>
+                <h2>Attachments</h2>
+                <div id="attachment-list"></div>
+                <div id="attachment-preview"></div>
+              </section>
+            </div>
+          </div>
+        </article>
+      </section>
+      <div id="error" role="alert" hidden></div>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
