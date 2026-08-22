@@ -110,11 +110,20 @@ def search_page(
     limit: int = PAGE_SIZE,
     sort_by: SortField | str = SortField.DATE,
     direction: SortDirection | str = SortDirection.DESCENDING,
+    search_attachments: bool = False,
 ) -> SearchPage:
     """Return one bounded page using exactly the CLI query language."""
     if offset < 0 or limit < 1:
         raise ValueError("search offset and limit must be positive")
-    found = search_headers(archive, parse_query(query), limit + 1, offset, SortField(sort_by), SortDirection(direction))
+    found = search_headers(
+        archive,
+        parse_query(query),
+        limit + 1,
+        offset,
+        SortField(sort_by),
+        SortDirection(direction),
+        search_attachments,
+    )
     return SearchPage(results=found[:limit], offset=offset, has_more=len(found) > limit)
 
 

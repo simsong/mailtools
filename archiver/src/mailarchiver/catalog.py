@@ -90,6 +90,7 @@ def create_catalog(path: Path) -> sqlite3.Connection:
 def create_search(path: Path) -> sqlite3.Connection:
     database = sqlite3.connect(path)
     database.execute("CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(sha256 UNINDEXED, content)")
+    database.execute("CREATE VIRTUAL TABLE IF NOT EXISTS attachment_fts USING fts5(sha256 UNINDEXED, content)")
     database.executescript(
         """
         PRAGMA foreign_keys = ON;

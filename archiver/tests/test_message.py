@@ -45,7 +45,7 @@ def test_raw_8bit_received_header_resolves_date_without_altering_identity() -> N
     """Requirement: malformed header encoding falls back without affecting preservation."""
     raw = b"\n".join(
         [
-            b"Message-ID: <legacy-received@example>",
+            b"Message-ID: <raw-received@example>",
             b"From: sender@example.net",
             b"Received: from caf\xe9.example; Thu, 1 Feb 2024 12:00:00 +0000",
             b"",
@@ -65,7 +65,7 @@ def test_raw_8bit_recipient_header_preserves_address() -> None:
     """Requirement: recipient metadata survives malformed display-name encoding."""
     raw = b"\n".join(
         [
-            b"Message-ID: <legacy-recipient@example>",
+            b"Message-ID: <raw-recipient@example>",
             b"From: sender@example.net",
             b"To: Jos\xe9 <recipient@example.net>",
             b"Date: Thu, 1 Feb 2024 12:00:00 +0000",
@@ -171,7 +171,7 @@ def test_arbitrary_body_sender_text_is_not_treated_as_identity() -> None:
 
 
 def test_quoted_nested_mbox_from_header_is_recovered() -> None:
-    """Requirement: legacy nested MBOX status prefixes do not hide a valid From header."""
+    """Requirement: quoted nested-MBOX status prefixes do not hide a valid From header."""
     raw = b"\n".join(
         [
             b"Status: R",

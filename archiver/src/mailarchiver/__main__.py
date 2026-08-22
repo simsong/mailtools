@@ -11,12 +11,10 @@ import sqlite3
 import sys
 import threading
 import time
-from collections import Counter, deque
+from collections import deque
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import ExitStack
 from datetime import datetime, timezone
-from email import policy
-from email.parser import BytesParser
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -24,20 +22,17 @@ from tabulate import tabulate
 
 from .archive_path import add_archive_argument, require_archive
 from .catalog import address_pk, create_catalog, create_search, owner_tokens
-from .message import ParsedMessage, decoded_header, parse_message, sender_identity
+from .message import ParsedMessage, parse_message
 from .mbox import (
     DiskFullError,
-    MboxLocation,
     PendingPublication,
     PublicationRecovery,
     add_message,
     clear_publication_journal,
     journal_publication,
     mailbox_name,
-    read_location_candidates,
-    read_verified_location,
     recover_publication,
-    write_manifests,
+    write_integrity_files,
 )
 from .scanner import ClamScanner
 from .search import QUARANTINE_MAILBOX, SEARCH_CATEGORIES, index_message, index_message_safely
@@ -52,6 +47,7 @@ from .sources import (
     source_files,
     source_messages,
 )
+from .standalone_verify import install_archive_verifier
 
 DEFAULT_REPORT_TOP = 10
 PROGRESS_REFRESH_SECONDS = 0.25
@@ -211,13 +207,18 @@ def ingest(args: argparse.Namespace) -> None:
     archive = Path(args.archive)
     archive.mkdir(parents=True, exist_ok=True)
     catalog_path = archive / "archive.sqlite3"
-    existing_output = any(archive.glob("*.mbox")) or (archive / "search.sqlite3").exists() or any(archive.glob("*.mbox.sha256"))
+    existing_output = (
+        any(archive.glob("*.mbox"))
+        or (archive / "search.sqlite3").exists()
+        or any(archive.glob("*.mbox.integrity"))
+    )
     if not catalog_path.exists() and existing_output:
         raise RuntimeError("cannot create a fresh catalog beside existing archive output; use a new empty archive directory")
     catalog, search = create_catalog(catalog_path), create_search(archive / "search.sqlite3")
+    install_archive_verifier(archive)
     recovery = recover_publication(archive, catalog, search)
     if recovery is not PublicationRecovery.NONE:
-        write_manifests(archive)
+        write_integrity_files(archive, catalog)
         print(f"recovered: pending message publication {recovery.value}", file=sys.stderr)
     owners = owner_tokens(Path(args.owner_names_file))
     run_pk = catalog.execute("INSERT INTO ingest_runs(started_at) VALUES (?)", (datetime.now(timezone.utc).isoformat(),)).lastrowid
@@ -320,7 +321,7 @@ def ingest(args: argparse.Namespace) -> None:
                 box.close()
                 boxes.pop(mbox_path, None)
             if recover_publication(archive, catalog, search) is not PublicationRecovery.NONE:
-                write_manifests(archive)
+                write_integrity_files(archive, catalog)
             raise
         if category in SEARCH_CATEGORIES:
             index_message_safely(catalog, search, message_pk, raw, args.index_attachments)
@@ -436,18 +437,18 @@ def ingest(args: argparse.Namespace) -> None:
     finally:
         for box in boxes.values():
             box.close()
-        manifest_error: Exception | None = None
+        integrity_error: Exception | None = None
         if boxes:
             try:
-                write_manifests(archive)
+                write_integrity_files(archive, catalog)
             except Exception as error:
-                manifest_error = error
+                integrity_error = error
                 if failure_detail is None:
                     failure_detail = f"{type(error).__name__}: {error}"
                 else:
-                    print(f"manifest refresh also failed: {error}", file=sys.stderr)
+                    print(f"integrity refresh also failed: {error}", file=sys.stderr)
         result = "completed" if succeeded else "interrupted" if interrupted else "disk-full" if disk_full else "failed"
-        if manifest_error is not None:
+        if integrity_error is not None:
             result = "failed"
         catalog.execute(
             "UPDATE ingest_runs SET completed_at = ?, result = ?, detail = ? WHERE run_pk = ?",
@@ -457,8 +458,8 @@ def ingest(args: argparse.Namespace) -> None:
         catalog.close()
         search.close()
         progress.finish(result)
-        if manifest_error is not None and succeeded:
-            raise manifest_error
+        if integrity_error is not None and succeeded:
+            raise integrity_error
 
 
 def review(args: argparse.Namespace) -> None:
@@ -593,169 +594,6 @@ def refresh_index(args: argparse.Namespace) -> None:
     os.replace(temporary, archive / "search.sqlite3")
 
 
-def refresh_subjects(args: argparse.Namespace) -> None:
-    """Rebuild human-readable catalog subjects from canonical MBOX bytes."""
-    archive = Path(args.archive)
-    catalog = create_catalog(archive / "archive.sqlite3")
-    updated = 0
-    try:
-        catalog.execute("BEGIN")
-        for path in sorted(archive.glob("*.mbox")):
-            box = mailbox.mbox(path, factory=None, create=False)
-            try:
-                for key in box.iterkeys():
-                    raw = box.get_bytes(key, from_=False)
-                    digest = hashlib.sha256(raw).hexdigest()
-                    parsed = BytesParser(policy=policy.compat32).parsebytes(raw)
-                    subject = decoded_header(str(parsed.get("Subject") or ""))
-                    result = catalog.execute("UPDATE messages SET subject = ? WHERE sha256 = ?", (subject, digest))
-                    if result.rowcount != 1:
-                        raise ValueError(f"MBOX message has no unique catalog row: {path}")
-                    updated += 1
-            finally:
-                box.close()
-        catalog.commit()
-        print(f"refreshed {updated} catalog subjects")
-    except BaseException:
-        catalog.rollback()
-        raise
-    finally:
-        catalog.close()
-
-
-def refresh_senders(args: argparse.Namespace) -> None:
-    """Repair blank catalog senders from verified canonical MBOX records."""
-    archive = Path(args.archive)
-    catalog = create_catalog(archive / "archive.sqlite3")
-    owners = owner_tokens(Path(args.owner_names_file))
-    counts: Counter[str] = Counter()
-    try:
-        rows = catalog.execute(
-            "SELECT m.message_pk, m.sha256, m.category, g.filename, l.byte_offset, l.byte_length "
-            "FROM messages m JOIN email_addresses a ON a.address_pk = m.sender_address_pk "
-            "JOIN locations l USING (message_pk) JOIN mbox_generations g USING (generation_pk) "
-            "WHERE a.address = '' ORDER BY m.message_pk"
-        ).fetchall()
-        catalog.execute("BEGIN")
-        for message_pk, expected_sha256, category, filename, offset, length in rows:
-            try:
-                raw = read_verified_location(
-                    archive / filename,
-                    MboxLocation(byte_offset=offset, byte_length=length),
-                    expected_sha256,
-                )
-            except ValueError as error:
-                raise ValueError(f"canonical MBOX hash mismatch for message {message_pk}") from error
-            message = BytesParser(policy=policy.compat32).parsebytes(raw)
-            defects = []
-            identity = sender_identity(message, defects, raw)
-            counts[identity.source] += 1
-            catalog.executemany(
-                "INSERT OR IGNORE INTO metadata_defects(message_pk, field, detail) VALUES (?, ?, ?)",
-                ((message_pk, defect.field, defect.detail) for defect in defects),
-            )
-            if not identity.value:
-                continue
-            updated_category = (
-                "Sent"
-                if category != "INFECTED" and any(token in identity.value.lower() for token in owners)
-                else category
-            )
-            catalog.execute(
-                "UPDATE messages SET sender_address_pk = ?, category = ? WHERE message_pk = ?",
-                (address_pk(catalog, identity.value), updated_category, message_pk),
-            )
-        catalog.execute(
-            "DELETE FROM metadata_defects WHERE field = 'From' AND detail = 'missing or invalid sender address' "
-            "AND message_pk IN (SELECT message_pk FROM messages JOIN email_addresses "
-            "ON email_addresses.address_pk = messages.sender_address_pk WHERE email_addresses.address != '')"
-        )
-        catalog.commit()
-    except BaseException:
-        catalog.rollback()
-        raise
-    finally:
-        catalog.close()
-    print(
-        tabulate(
-            [
-                (source, counts[source])
-                for source in ("from", "embedded-from", "sender", "google-chat", "missing")
-            ],
-            headers=("source", "messages"),
-            tablefmt="simple",
-            intfmt=",",
-            colalign=("left", "right"),
-        )
-    )
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for block in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def refresh_locations(args: argparse.Namespace) -> None:
-    """Rebuild direct MBOX locations from canonical files without changing them."""
-    archive = Path(args.archive)
-    catalog = create_catalog(archive / "archive.sqlite3")
-    try:
-        catalog.execute("BEGIN")
-        catalog.execute("DELETE FROM locations")
-        catalog.execute("DELETE FROM mbox_generations")
-        located: set[int] = set()
-        for path in sorted(archive.glob("*.mbox")):
-            box = mailbox.mbox(path, factory=None, create=False)
-            try:
-                offsets = [box._lookup(key) for key in box.iterkeys()]
-            finally:
-                box.close()
-            generation = catalog.execute(
-                "INSERT INTO mbox_generations(filename, sha256, message_count, byte_count) VALUES (?, ?, ?, ?) RETURNING generation_pk",
-                (path.name, file_sha256(path), len(offsets), path.stat().st_size),
-            ).fetchone()
-            assert generation is not None
-            for start, stop in offsets:
-                location = MboxLocation(byte_offset=start, byte_length=stop - start)
-                matches = {
-                    row[0]
-                    for raw in read_location_candidates(path, location)
-                    if (
-                        row := catalog.execute(
-                            "SELECT message_pk FROM messages WHERE sha256 = ?",
-                            (hashlib.sha256(raw).hexdigest(),),
-                        ).fetchone()
-                    )
-                    is not None
-                }
-                row = None if not matches else (matches.pop(),)
-                if matches:
-                    raise ValueError(f"ambiguous MBOX identity for {path} at byte {start}")
-                if row is None:
-                    raise ValueError(f"MBOX message missing from catalog: {path} at byte {start}")
-                message_pk = int(row[0])
-                if message_pk in located:
-                    raise ValueError(f"duplicate canonical MBOX location for message {message_pk}")
-                located.add(message_pk)
-                catalog.execute(
-                    "INSERT INTO locations(message_pk, generation_pk, byte_offset, byte_length) VALUES (?, ?, ?, ?)",
-                    (message_pk, generation[0], start, stop - start),
-                )
-        missing = catalog.execute("SELECT message_pk FROM messages EXCEPT SELECT message_pk FROM locations").fetchall()
-        if missing:
-            raise ValueError(f"catalogue messages missing canonical MBOX locations: {len(missing)}")
-        catalog.commit()
-        print(f"rebuilt {len(located)} MBOX locations")
-    except BaseException:
-        catalog.rollback()
-        raise
-    finally:
-        catalog.close()
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     add_archive_argument(parser, "canonical archive directory")
@@ -777,13 +615,6 @@ def main() -> int:
     refresh_parser = commands.add_parser("refresh-index")
     refresh_parser.add_argument("--index-attachments", action="store_true", help="include text attachments; non-text attachments require the planned Tika extractor")
     refresh_parser.set_defaults(function=refresh_index)
-    subjects_parser = commands.add_parser("refresh-subjects")
-    subjects_parser.set_defaults(function=refresh_subjects)
-    senders_parser = commands.add_parser("refresh-senders")
-    senders_parser.add_argument("--owner-names-file", required=True)
-    senders_parser.set_defaults(function=refresh_senders)
-    locations_parser = commands.add_parser("refresh-locations")
-    locations_parser.set_defaults(function=refresh_locations)
     args = parser.parse_args()
     args.archive = require_archive(parser, args.archive)
     try:

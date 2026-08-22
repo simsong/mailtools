@@ -160,8 +160,9 @@ def test_ingest_routes_preserves_and_indexes_messages(
         assert search.execute("SELECT count(*) FROM message_fts WHERE sha256 = ?", (infected_sha256,)).fetchone() == (0,)
     finally:
         search.close()
-    assert (archive / "2024-Archive1.mbox.sha256").is_file()
-    assert (archive / "INFECTED1.mbox.sha256").is_file()
+    assert (archive / "2024-Archive1.mbox.integrity").is_file()
+    assert (archive / "INFECTED1.mbox.integrity").is_file()
+    assert (archive / "verify_mail_archive.py").is_file()
     assert not (archive / ".mailarchiver-pending.json").exists()
 
 
@@ -171,7 +172,7 @@ def test_refresh_index_excludes_quarantine_mailboxes(tmp_path: Path) -> None:
     archive.mkdir()
     messages = {
         "2024-Archive1.mbox": b"Message-ID: <normal@example>\nSubject: normal\n\nnormal body\n",
-        "INFECTED.mbox": b"Message-ID: <infected@example>\nSubject: infected\n\ninfected body\n",
+        "INFECTED1.mbox": b"Message-ID: <infected@example>\nSubject: infected\n\ninfected body\n",
         "MALFORMED1.mbox": b"Message-ID: <malformed@example>\nSubject: malformed\n\nmalformed body\n",
     }
     for filename, raw in messages.items():

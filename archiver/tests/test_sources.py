@@ -48,11 +48,11 @@ def test_modern_apple_mail_package_reads_complete_emlx_only(tmp_path: Path) -> N
     assert emlx_bytes(emlx) == raw
 
 
-def test_legacy_apple_mail_package_reads_mbox_stream(tmp_path: Path) -> None:
-    """Requirement: legacy Apple Mail package MBOX streams remain supported."""
+def test_classic_apple_mail_package_reads_mbox_stream(tmp_path: Path) -> None:
+    """Requirement: Apple Mail package MBOX streams are valid source mail."""
     path = tmp_path / "On My Mac.mbox" / "mbox"
     path.parent.mkdir()
-    raw = b"Message-ID: <legacy@example>\nDate: Thu, 1 Feb 2024 12:00:00 +0000\n\nbody\n"
+    raw = b"Message-ID: <classic@example>\nDate: Thu, 1 Feb 2024 12:00:00 +0000\n\nbody\n"
     box = mailbox.mbox(path)
     try:
         box.add(raw)

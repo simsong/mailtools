@@ -5,6 +5,7 @@ const state = {
   offset: 0,
   sortBy: "date",
   sortDirection: "descending",
+  searchAttachments: false,
   selected: null,
   selectionRequest: null,
   view: null,
@@ -26,7 +27,7 @@ async function initialize() {
   if (initialized) return;
   initialized = true;
   for (const id of ["choose-archive", "search-form", "search", "archive-label", "result-status", "result-list", "load-more",
-    "sort-by", "sort-direction", "message-content", "message-file-well", "message-file-name", "message-subject", "message-headers", "part-select", "remote-content",
+    "sort-by", "sort-direction", "search-attachments", "message-content", "message-file-well", "message-file-name", "message-subject", "message-headers", "part-select", "remote-content",
     "save-message", "print-message", "body-view", "attachment-section", "attachment-list", "attachment-preview", "error"]) {
     elements[id] = byId(id);
   }
@@ -35,6 +36,7 @@ async function initialize() {
   elements["load-more"].addEventListener("click", () => runSearch(true));
   elements["sort-by"].addEventListener("change", () => runSearch(false));
   elements["sort-direction"].addEventListener("click", toggleSortDirection);
+  elements["search-attachments"].addEventListener("change", () => runSearch(false));
   elements["result-list"].addEventListener("keydown", navigateResults);
   elements["part-select"].addEventListener("change", () => showPart(Number(elements["part-select"].value), false));
   elements["remote-content"].addEventListener("click", () => showPart(Number(elements["part-select"].value), true));
@@ -75,14 +77,16 @@ async function runSearch(append) {
   const query = elements.search.value.trim();
   const sortBy = elements["sort-by"].value;
   const sortDirection = state.sortDirection;
-  const sameSearch = query === state.query && sortBy === state.sortBy && sortDirection === state.sortDirection;
+  const searchAttachments = elements["search-attachments"].checked;
+  const sameSearch = query === state.query && sortBy === state.sortBy && sortDirection === state.sortDirection && searchAttachments === state.searchAttachments;
   const offset = append && sameSearch ? state.offset : 0;
   elements["result-status"].textContent = "Searching…";
-  const page = await call(() => window.pywebview.api.search(query, offset, sortBy, sortDirection));
+  const page = await call(() => window.pywebview.api.search(query, offset, sortBy, sortDirection, searchAttachments));
   if (!page) return;
   state.query = query;
   state.sortBy = sortBy;
   state.sortDirection = sortDirection;
+  state.searchAttachments = searchAttachments;
   state.offset = offset + page.results.length;
   if (!append) elements["result-list"].replaceChildren();
   for (const result of page.results) {

@@ -5,8 +5,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import mailbox
-import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -25,6 +23,7 @@ from mailarchiver.gui_service import (
     write_message,
 )
 from mailarchiver.gui_app import GuiApi
+from mailarchiver.mbox import add_message
 from mailarchiver.search import index_message
 
 
@@ -46,6 +45,8 @@ MULTIPART_MESSAGE = (
     b"Content-Transfer-Encoding: base64\n\naW1hZ2U=\n"
     b"--outer\nContent-Type: application/pdf\nContent-Disposition: attachment; filename=../report.pdf\n"
     b"Content-Transfer-Encoding: base64\n\nJVBERi0xLjQK\n"
+    b"--outer\nContent-Type: text/plain; charset=utf-8\nContent-Disposition: attachment; filename=notes.txt\n\n"
+    b"Appendixquartz appears only in this attachment.\n"
     b"--outer--\n"
 )
 
@@ -55,6 +56,7 @@ def make_gui_archive(tmp_path: Path) -> Path:
     archive.mkdir()
     catalog = create_catalog(archive / "archive.sqlite3")
     search = create_search(archive / "search.sqlite3")
+    message_pks: list[int] = []
     try:
         sender = address_pk(catalog, "sender@example.net")
         recipient = address_pk(catalog, "recipient@example.net")
@@ -67,27 +69,36 @@ def make_gui_archive(tmp_path: Path) -> Path:
                 "VALUES (?, ?, ?, ?, ?, 'date', 'Archive')",
                 (message_id, hashlib.sha256(raw).hexdigest(), sender, subject, timestamp),
             )
+            message_pks.append(int(cursor.lastrowid))
             catalog.execute("INSERT INTO recipients(message_pk, address_pk) VALUES (?, ?)", (cursor.lastrowid, recipient))
-            index_message(search, raw, False)
+            index_message(search, raw, True)
         catalog.commit()
         search.commit()
     finally:
         catalog.close()
         search.close()
-    box = mailbox.mbox(archive / "2024-Archive1.mbox")
+    path = archive / "2024-Archive1.mbox"
+    box = mailbox.mbox(path)
     try:
-        box.add(SIMPLE_MESSAGE)
-        box.add(MULTIPART_MESSAGE)
-        box.flush()
+        locations = [add_message(box, path, raw) for raw in (SIMPLE_MESSAGE, MULTIPART_MESSAGE)]
     finally:
         box.close()
-    refreshed = subprocess.run(
-        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert refreshed.returncode == 0, refreshed.stderr
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        generation = catalog.execute(
+            "INSERT INTO mbox_generations(filename, sha256, message_count, byte_count) VALUES (?, '', 0, 0) "
+            "RETURNING generation_pk",
+            (path.name,),
+        ).fetchone()
+        assert generation is not None
+        catalog.executemany(
+            "INSERT INTO locations(message_pk, generation_pk, byte_offset, byte_length) VALUES (?, ?, ?, ?)",
+            ((message_pk, generation[0], location.byte_offset, location.byte_length)
+             for message_pk, location in zip(message_pks, locations)),
+        )
+        catalog.commit()
+    finally:
+        catalog.close()
     return archive
 
 
@@ -119,7 +130,16 @@ def test_gui_search_results_include_indexed_attachment_counts(tmp_path: Path) ->
 
     results = search_page(archive, "", sort_by="date", direction="ascending").results
 
-    assert [(result.message_pk, result.attachment_count) for result in results] == [(1, 0), (2, 2)]
+    assert [(result.message_pk, result.attachment_count) for result in results] == [(1, 0), (2, 3)]
+
+
+def test_gui_attachment_checkbox_expands_full_text_search(tmp_path: Path) -> None:
+    """Requirement: attachment terms affect GUI results only when attachment search is selected."""
+    archive = make_gui_archive(tmp_path)
+
+    assert search_page(archive, "Appendixquartz").results == []
+    assert [result.message_pk for result in search_page(archive, "Appendixquartz", search_attachments=True).results] == [2]
+    assert [result.message_pk for result in search_page(archive, "Plain Appendixquartz", search_attachments=True).results] == [2]
 
 
 def test_gui_loads_indexed_previews_on_its_background_worker(tmp_path: Path) -> None:
@@ -155,7 +175,11 @@ def test_gui_selects_multipart_views_and_sanitizes_html(tmp_path: Path) -> None:
 
     assert {part.content_type for part in view.body_parts} == {"text/plain", "text/html", "message/rfc822"}
     assert view.preferred_part_id == html_id
-    assert [(item.filename, item.preview) for item in view.attachments] == [("logo.png", "image"), ("report.pdf", "pdf")]
+    assert [(item.filename, item.preview) for item in view.attachments] == [
+        ("logo.png", "image"),
+        ("report.pdf", "pdf"),
+        ("notes.txt", None),
+    ]
     assert render_part(archive, 2, plain_id).content == "Plain version."
     blocked = render_part(archive, 2, html_id)
     assert "<script" not in blocked.content

@@ -90,9 +90,16 @@ class GuiApi:
         return self.status()
 
     def search(
-        self, query: str, offset: int = 0, sort_by: str = "date", direction: str = "descending"
+        self,
+        query: str,
+        offset: int = 0,
+        sort_by: str = "date",
+        direction: str = "descending",
+        search_attachments: bool = False,
     ) -> dict[str, object]:
-        return search_page(self._archive(), query, offset, DEFAULT_PAGE_SIZE, sort_by, direction).model_dump(mode="json")
+        return search_page(
+            self._archive(), query, offset, DEFAULT_PAGE_SIZE, sort_by, direction, search_attachments
+        ).model_dump(mode="json")
 
     def request_previews(self, message_pks: list[int]) -> bool:
         if not message_pks or len(message_pks) > DEFAULT_PAGE_SIZE:

@@ -20,7 +20,7 @@ All deliverables reside in one archive directory.
   `{YEAR}-Sent1.mbox` and `{YEAR}-Archive1.mbox`.
 * A file rolls over before it reaches 3.75 GiB.  Later parts are named
   `{YEAR}-Sent2.mbox`, `{YEAR}-Sent3.mbox`, `{YEAR}-Archive2.mbox`, etc.
-* Messages detected as infected are instead placed in `INFECTED.mbox`, with
+* Messages detected as infected are instead placed in `INFECTED1.mbox`, with
   the same numeric rollover rule if needed.  They are never discarded or
   altered.
 * A message's category is **Sent** if the parsed `From:` address contains,
@@ -36,8 +36,12 @@ All deliverables reside in one archive directory.
 * `X-Apple-Auto-Saved` messages are excluded entirely.  Their source and
   exclusion reason are retained in the primary database, but no MBOX copy is
   created.
-* Each finished MBOX has a SHA-256 manifest recording its byte hash, message
-  count, and ordered `(Message-ID, message SHA-256)` records.
+* Each finished MBOX has an adjacent `.mbox.integrity` file in the versioned
+  hybrid format specified by [INTEGRITY_CONTROLS.md](INTEGRITY_CONTROLS.md).
+  Its JSON control records declare `h1` as SHA-256 over the complete MBOX,
+  `h2` as SHA-256 over each recovered original RFC 5322 message, and `h3` as
+  SHA-256 over semantic-message standard version 1. Its TSV region records
+  ordered message identifiers and tagged `h2:` and `h3:` digests.
 * A zero-byte source message retains the SHA-256 identity of empty bytes. Direct
   retrieval removes only the single separator newline necessarily introduced
   by standard MBOX encoding, and only when that exact empty digest is expected.
@@ -102,14 +106,14 @@ requirement.
   that wait and shows its increasing startup elapsed time instead of a stale
   source-file status.
 * Control-C is a graceful stop: close scanner and MBOX resources, commit
-  completed messages and observations, refresh manifests, report interruption,
+  completed messages and observations, refresh integrity files, report interruption,
   print the standard archive report for the completed partial run, and return
   exit status 130 without a traceback.  An `ENOSPC` MBOX append
   must be rolled back to the prior file size where possible, reported, and
   stopped without silently treating the message as archived.
 * Every ingest run records its completion time, result, and failure detail.
   An unexpected parser failure drains earlier queued messages, closes
-  resources, refreshes manifests for committed MBOX changes, and leaves a
+  resources, refreshes integrity files for committed MBOX changes, and leaves a
   rerunnable error observation containing the source offset and raw SHA-256.
 * Before each MBOX append, ingest durably records the target, prior length,
   message identity, and whether the target already existed. Catalog changes
@@ -125,7 +129,7 @@ requirement.
   people counts.  `--top 0` suppresses correspondent lists.
 * ClamAV outcomes are `clean`, `infected`, `unscannable`, or `scanner-error`,
   with scanner version, signature database version, and diagnostic retained.
-* Only a positive detection routes a message to `INFECTED.mbox`; an
+* Only a positive detection routes a message to `INFECTED1.mbox`; an
   unscannable attachment or scanner failure does not destroy or silently
   exclude a message.
 * Infected and malformed quarantine mail remains catalogued but is excluded
@@ -142,7 +146,7 @@ content.  It tracks at least:
   date and date source, category, byte length, ClamAV result;
 * parsed sender and recipient identity foreign keys, and decoded/unfolded
   Subject headers; sender identity uses a valid `From:` address, then a valid
-  `From:` inside a quoted legacy nested-MBOX record, then a valid RFC `Sender:`
+  `From:` inside a quoted nested-MBOX record, then a valid RFC `Sender:`
   address. A narrowly recognized Google Chat event with none of these
   uses its embedded full name suffixed by `(Google Chat)`; all other missing
   senders remain empty in metadata and display as `(missing sender)` in reports.
@@ -152,7 +156,7 @@ content.  It tracks at least:
 * each final MBOX filename, message byte offset, byte length, and archive
   generation; and
 * sources, ingest runs, exclusions, duplicates, validation results, and
-  manifests.
+  integrity metadata.
 
 Logical messages and physical locations are separate relations.  MBOX offsets
 are generation-specific and must be replaced atomically when a file is
@@ -160,8 +164,8 @@ sorted or repacked.
 
 Email address text is normalized into `email_addresses(address_pk, address)`.
 `messages.sender_address_pk` and `recipients.address_pk` reference that table;
-recipient role and header order are intentionally not retained. The historical
-column name also stores explicitly labeled non-email Google Chat identities.
+recipient role and header order are intentionally not retained. The address
+table also stores explicitly labeled non-email Google Chat identities.
 
 ## Search database
 
@@ -169,10 +173,13 @@ column name also stores explicitly labeled non-email Google Chat identities.
 normal Sent and Archive message SHA-256, normalized headers, `text/plain` body text when present,
 otherwise rendered `text/html`, otherwise safe single-part message text.  It
 parses XML-looking content declared as `text/html` with the same forgiving HTML
-rules without emitting parser diagnostics.  It does not index attachment bytes by default.  `--index-attachments` enables
-text attachment indexing.  Binary attachment extraction is a separately
-configured, opt-in capability using Apache Tika; the Tika JAR is installed
-locally and checksum-verified, never run as a service.  It must be fully rebuildable from the
+rules without emitting parser diagnostics. Body/header text and attachment
+text occupy separate FTS5 tables so callers can exclude attachments from the
+default search. It does not index attachment bytes by default.
+`--index-attachments` populates the separate table with decoded text
+attachments. Binary attachment extraction through Apache Tika is not yet
+implemented; the optional Tika installer only downloads and verifies the JAR.
+The search database must be fully rebuildable from the
 canonical MBOX files and `archive.sqlite3`, and is not backed up as a required
 preservation object.
 It excludes `INFECTED` and `MALFORMED` quarantine categories even when
@@ -200,14 +207,8 @@ one-line headers, prefixed by the stable `messages.message_pk`; `--limit 0`
 prints all matches.  Supplying one such number prints the original RFC 5322
 message bytes from canonical MBOX storage.  The current implementation finds
 that message through a catalogued generation-specific MBOX location and
-verifies the recovered bytes against its SHA-256 before printing. New ingests
-record locations; `refresh-locations` rebuilds them from existing canonical
-MBOX files without modifying message bytes.
-It decodes/unfolds historical RFC 2047 subject values while printing, so an
-older catalog remains readable without rewriting canonical MBOX files.
-`refresh-subjects` rewrites older `messages.subject` values from canonical
-MBOX data so the catalog itself retains decoded, human-readable subjects.
-Run `refresh-index` afterward to normalize historical FTS header content too.
+verifies the recovered bytes against its SHA-256 before printing. Every ingest
+records the location as part of the same publication as the message catalog row.
 Within one result set, message numbers are right-aligned to that set's widest
 number. Interactive terminals render subjects in ANSI bold; redirected output
 contains no terminal control codes.
@@ -230,6 +231,10 @@ independent message window. The result list can sort by date, subject, or
 sender in either direction. When it has keyboard focus, Up Arrow and Down
 Arrow move the selection and display the newly selected message. Result rows
 show the indexed attachment count with a paperclip.
+An unchecked **Search attachments** control searches only headers and message
+bodies. When checked, the same ordinary full-text expression also matches the
+separate indexed text-attachment table; metadata selectors retain their normal
+meaning. The control does not extract attachment content on demand.
 The GUI paints each result page from header metadata first, then requests its
 indexed body previews on a background worker and fills a reserved third line
 without blocking the initial result display.
@@ -295,19 +300,21 @@ the command fails before reading or writing an archive.
   prior file as a backup.
 * The replacement and backup are parsed end-to-end.  Their unordered sets of
   `(Message-ID, SHA-256)` must match exactly before the backup is deleted.
-* The MBOX byte hash, manifests, locations, and metadata database updates are
+* The MBOX byte hash, integrity files, locations, and metadata database updates are
   published transactionally.  Interrupted runs leave either the old verified
   archive or a recoverable temporary/backup pair; they never publish a partial
   archive as valid.
-* A `verify` command is strictly read-only: it reparses every canonical MBOX,
-  checks manifests, offsets, and database rows, and reports duplicate-policy
+* Ingest installs `verify_mail_archive.py` in the archive. This single-file,
+  standard-library-only tool is strictly read-only: it parses only the current
+  `.mbox.integrity` format and verifies every declared complete-MBOX, raw-message,
+  and semantic-message digest without consulting SQLite. It exits nonzero after
+  reporting any mismatch.
+* A future integrated `verify` command is strictly read-only: it reparses every canonical MBOX,
+  checks integrity files, offsets, and database rows, and reports duplicate-policy
   violations.
-* `refresh-index` rebuilds the disposable FTS database. `refresh-subjects`
-  rebuilds decoded catalog subjects from canonical MBOX files. `refresh-senders`
-  repairs blank catalog sender identities from hash-verified canonical locations
-  and applies owner-name Sent classification without changing MBOX bytes. `refresh-locations`
-  rebuilds catalogued MBOX offsets from canonical MBOX files. `review` queries the
-  committed source-observation log by run, source, and disposition.
+* `refresh-index` rebuilds the disposable FTS database. `review` queries the
+  committed source-observation log by run, source, and disposition. Derived
+  catalog fields and canonical locations are created correctly during ingest.
 
 ## Scope boundaries
 
@@ -317,7 +324,7 @@ separate, one-name-per-line reusable classification input.  A local
 special-purpose search and message-viewing interface is a consumer of
 the two SQLite databases, not a reason to depend on Thunderbird or FoxTrot.
 No source mailbox is modified by this program.
-The current catalog schema is created only for a fresh archive and is versioned;
-there is no database migration or backfill path.  An unversioned or incompatible
-catalog is rejected. A fresh catalog is also refused beside existing canonical
-MBOX output because that would defeat deduplication.
+The current catalog schema is created only for a fresh archive and is versioned.
+An unversioned or incompatible catalog is rejected. A fresh catalog is also
+refused beside existing canonical MBOX or `.mbox.integrity` output because that
+would defeat deduplication.

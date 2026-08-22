@@ -1,4 +1,4 @@
-"""Requirements: fresh catalogs are versioned and legacy schemas are not migrated."""
+"""Requirements: fresh catalogs are versioned and incompatible schemas fail closed."""
 
 import sqlite3
 from pathlib import Path
@@ -10,20 +10,20 @@ from mailarchiver.catalog import SCHEMA_VERSION, create_catalog
 
 def test_rejects_unversioned_catalog(tmp_path: Path) -> None:
     path = tmp_path / "archive.sqlite3"
-    legacy = sqlite3.connect(path)
-    legacy.executescript(
+    incompatible = sqlite3.connect(path)
+    incompatible.executescript(
         """
         CREATE TABLE messages (message_pk INTEGER PRIMARY KEY);
         """
     )
-    legacy.commit()
-    legacy.close()
+    incompatible.commit()
+    incompatible.close()
 
     with pytest.raises(RuntimeError, match="unsupported unversioned"):
         create_catalog(path)
 
 
-def test_creates_current_schema_without_migration(tmp_path: Path) -> None:
+def test_creates_current_schema_directly(tmp_path: Path) -> None:
     catalog = create_catalog(tmp_path / "archive.sqlite3")
     try:
         assert catalog.execute("SELECT version FROM schema_info").fetchone() == (SCHEMA_VERSION,)

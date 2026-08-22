@@ -14,15 +14,17 @@ The archive must contain `archive.sqlite3`, `search.sqlite3`, and the canonical
 MBOX files referenced by the catalog. Without `--archive`, the app opens with a
 directory chooser.
 
-This prototype revision adds attachment metadata and deterministic 18-word body
-previews to the disposable search database. Rebuild an older index before using
-the GUI:
+This prototype revision adds attachment metadata, deterministic 18-word body
+previews, and a separate text-attachment FTS table to the disposable search
+database. Build the index before using the GUI; include
+`--index-attachments` to populate attachment search:
 
 ```console
-make run ARGS="--archive /path/to/archive refresh-index"
+make run ARGS="--archive /path/to/archive refresh-index --index-attachments"
 ```
 
-The prototype provides one-field CLI-compatible search, 100-result paging,
+The prototype provides one-field CLI-compatible search, an explicit **Search
+attachments** checkbox, 100-result paging,
 date/subject/sender sorting, keyboard result navigation, MIME-part shortcuts,
 message and MIME-part views, separate message windows, sanitized HTML with
 remote content blocked by default, inline image and PDF previews, attachment

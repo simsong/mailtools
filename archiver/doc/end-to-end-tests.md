@@ -44,16 +44,11 @@ without depending on disposable search state.
 
 `test_sources.py` verifies one sequential pass produces both the stored
 old-length prefix SHA-256 and the updated complete-file SHA-256. It also models
-modern and legacy Apple Mail package layouts, checks exact EMLX payload
+modern and classic Apple Mail package layouts, checks exact EMLX payload
 extraction with a plist trailer, ignores non-message Mail data and attachment
 fragments, rejects `.partial.emlx`, and refuses a missing source.
 
 `test_message.py` checks earliest-valid-Received date fallback independently of
 the MBOX/ClamAV integration corpus. It also verifies RFC `Sender:` fallback,
-narrow Google Chat actor recognition, quoted legacy nested-MBOX `From:`
+narrow Google Chat actor recognition, quoted nested-MBOX `From:`
 recovery, and rejection of lookalike ordinary body text.
-`test_refresh_senders_repairs_blank_catalog_identity` verifies canonical
-location hash checking, derived sender repair, and owner Sent reclassification.
-
-The tests are expected to fail until the first implementation phase supplies
-the CLI, databases, and ingest pipeline.

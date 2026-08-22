@@ -105,6 +105,7 @@ def search_headers(
     offset: int = 0,
     sort_by: SortField = SortField.DATE,
     direction: SortDirection = SortDirection.DESCENDING,
+    search_attachments: bool = False,
 ) -> list[MessageHeader]:
     catalog_path, search_path = archive / "archive.sqlite3", archive / "search.sqlite3"
     if not catalog_path.is_file() or not search_path.is_file():
@@ -136,8 +137,17 @@ def search_headers(
             clauses.append("m.date_utc >= ?")
             parameters.append((selected_date + timedelta(days=1)).isoformat() + "T00:00:00+00:00")
         if terms.text:
-            clauses.append("m.sha256 IN (SELECT sha256 FROM search.message_fts WHERE message_fts MATCH ?)")
-            parameters.append(fts_query(terms.text))
+            if search_attachments:
+                for term in terms.text:
+                    clauses.append(
+                        "m.sha256 IN (SELECT sha256 FROM search.message_fts WHERE message_fts MATCH ? "
+                        "UNION SELECT sha256 FROM search.attachment_fts WHERE attachment_fts MATCH ?)"
+                    )
+                    match = fts_query([term])
+                    parameters.extend((match, match))
+            else:
+                clauses.append("m.sha256 IN (SELECT sha256 FROM search.message_fts WHERE message_fts MATCH ?)")
+                parameters.append(fts_query(terms.text))
         order_column = {
             SortField.DATE: "m.date_utc",
             SortField.SUBJECT: "lower(m.subject)",
@@ -204,7 +214,7 @@ def read_message_bytes(archive: Path, message_pk: int) -> bytes:
         raise ValueError(f"no message numbered {message_pk}")
     target, filename, offset, length = row
     if filename is None:
-        raise ValueError(f"message {message_pk} has no MBOX location; run mailarchiver refresh-locations")
+        raise ValueError(f"archive invariant failed: message {message_pk} has no MBOX location")
     try:
         raw = read_verified_location(
             archive / filename,
@@ -226,7 +236,7 @@ def print_message(archive: Path, message_pk: int, full_headers: bool, html: bool
 
 def format_header(result: MessageHeader, number_width: int, styled: bool) -> str:
     """Format a one-line result, emphasizing the subject only for terminals."""
-    subject = decoded_header(result.subject)
+    subject = result.subject
     if styled:
         subject = f"{BOLD}{subject}{RESET}"
     return f"{result.message_pk:>{number_width}} to:{result.recipients} from:{result.sender} subject:{subject} date:{result.date_utc}"

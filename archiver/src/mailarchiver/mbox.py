@@ -1,4 +1,4 @@
-"""Canonical MBOX writes and manifest generation."""
+"""Canonical MBOX writes, retrieval, recovery, and integrity generation."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from .message import ParsedMessage
+from .standalone_verify import IntegrityMessage, write_integrity_file
 
 
 class DiskFullError(RuntimeError):
@@ -87,6 +88,8 @@ def recover_publication(archive: Path, catalog: sqlite3.Connection, search: sqli
     path = archive / publication.filename
     if not path.exists() and not publication.file_existed:
         search.execute("DELETE FROM message_fts WHERE sha256 = ?", (publication.sha256,))
+        search.execute("DELETE FROM attachment_fts WHERE sha256 = ?", (publication.sha256,))
+        search.execute("DELETE FROM message_metadata WHERE sha256 = ?", (publication.sha256,))
         search.commit()
         clear_publication_journal(archive)
         return PublicationRecovery.ROLLED_BACK
@@ -100,6 +103,8 @@ def recover_publication(archive: Path, catalog: sqlite3.Connection, search: sqli
     else:
         path.unlink()
     search.execute("DELETE FROM message_fts WHERE sha256 = ?", (publication.sha256,))
+    search.execute("DELETE FROM attachment_fts WHERE sha256 = ?", (publication.sha256,))
+    search.execute("DELETE FROM message_metadata WHERE sha256 = ?", (publication.sha256,))
     search.commit()
     clear_publication_journal(archive)
     return PublicationRecovery.ROLLED_BACK
@@ -184,16 +189,44 @@ def read_verified_location(path: Path, location: MboxLocation, expected_sha256: 
     raise ValueError(f"MBOX location hash mismatch in {path}")
 
 
-def write_manifests(archive: Path) -> None:
-    for path in archive.glob("*.mbox"):
-        box = mailbox.mbox(path, factory=None, create=False)
-        try:
-            records = []
-            for key in box.iterkeys():
-                raw = box.get_bytes(key, from_=False)
-                message_id = raw.split(b"\nMessage-ID:", 1)[-1].split(b"\n", 1)[0].strip().decode("utf-8", "replace")
-                records.append(f"{message_id}\t{hashlib.sha256(raw).hexdigest()}")
-        finally:
-            box.close()
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        path.with_name(f"{path.name}.sha256").write_text("\n".join([f"sha256\t{digest}", f"messages\t{len(records)}", *records, ""]))
+def write_integrity_files(archive: Path, catalog: sqlite3.Connection) -> None:
+    """Regenerate every MBOX integrity sidecar from catalog-verified bytes."""
+    for path in sorted(archive.glob("*.mbox")):
+        rows = catalog.execute(
+            "SELECT m.message_id_normalized, m.sha256, l.byte_offset, l.byte_length "
+            "FROM messages m JOIN locations l USING (message_pk) "
+            "JOIN mbox_generations g USING (generation_pk) WHERE g.filename = ? "
+            "ORDER BY l.byte_offset",
+            (path.name,),
+        )
+        count_row = catalog.execute(
+            "SELECT COUNT(*) FROM locations JOIN mbox_generations USING (generation_pk) WHERE filename = ?",
+            (path.name,),
+        ).fetchone()
+        assert count_row is not None
+        message_count = int(count_row[0])
+
+        def messages():
+            for message_id, raw_sha256, offset, length in rows:
+                raw = read_verified_location(
+                    path,
+                    MboxLocation(byte_offset=offset, byte_length=length),
+                    raw_sha256,
+                )
+                header = raw.replace(b"\r\n", b"\n").replace(b"\r", b"\n").partition(b"\n\n")[0]
+                has_message_id = any(
+                    line.partition(b":")[0].lower() == b"message-id" for line in header.split(b"\n")
+                )
+                yield IntegrityMessage(
+                    message_id=message_id if has_message_id else None,
+                    raw_sha256=raw_sha256,
+                    raw=raw,
+                )
+
+        digest = write_integrity_file(path, messages(), message_count)
+        result = catalog.execute(
+            "UPDATE mbox_generations SET sha256 = ?, message_count = ?, byte_count = ? WHERE filename = ?",
+            (digest, message_count, path.stat().st_size, path.name),
+        )
+        if result.rowcount != 1:
+            raise ValueError(f"MBOX has no catalog generation: {path}")

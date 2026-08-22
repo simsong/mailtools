@@ -50,7 +50,7 @@ archiver/
 The first implementation supports recursive local MBOX, `.eml`, Maildir, and
 `.emlx` ingest, owner-token Sent classification, exact `(Message-ID, SHA-256)`
 deduplication, autosave exclusion, Date/Received/path-year date fallback, a temporary on-demand `clamd`,
-`INFECTED1.mbox`, SQLite catalog/FTS files, SHA-256 MBOX manifests,
+`INFECTED1.mbox`, SQLite catalog/FTS files, versioned `.mbox.integrity` files,
 per-run observation review, and year/correspondent reports.  The top-level
 `MAIL_ARCHIVE_DIR` selects the archive for every command by default; the
 `--archive` option overrides it. `ingest` takes one
@@ -67,7 +67,7 @@ loading virus definitions rather than retaining stale source progress. It uses
 streaming source byte offsets to show the current file and
 completion percentage and reports processed source-file plus
 archived/previously-seen/autosave/infected counts.  Control-C commits completed work, closes the
-temporary scanner, refreshes manifests, reports a controlled interruption, and
+temporary scanner, refreshes integrity files, reports a controlled interruption, and
 prints the partial-run archive report before returning 130.  An `ENOSPC` append is truncated back to the prior MBOX size where
 possible and reports a controlled nonzero stop.  Acceptance coverage includes
 the checked-in MBOX/EMLX corpus, source checkpoints, append resumption,
@@ -107,29 +107,23 @@ it applies `to:`/`from:`/`subject:` catalog filters, UTC calendar-day
 catalogued MBOX byte location, validating its SHA-256 before output.
 
 The catalog has an explicit schema version and is initialized only when fresh;
-unversioned or incompatible databases are rejected rather than migrated.
-`locations` and `mbox_generations` record appended-message offsets, and
-`refresh-locations` rebuilds them transactionally from canonical MBOX files.
+unversioned or incompatible databases are rejected. `locations` and
+`mbox_generations` are written as part of each message publication.
 
 Header parsing decodes and unfolds RFC 2047 Subject values before catalog and
-FTS insertion. `mailsearch` also decodes its displayed catalog value, keeping
-pre-existing catalogs readable without a destructive archive rewrite.
-`refresh-subjects` backfills human-readable `messages.subject` values from
-canonical MBOX bytes for an existing archive.
+FTS insertion. `mailsearch` displays that catalog value directly.
 Its result formatter determines number width from the returned `message_pk`
 values and emits ANSI bold only for a terminal subject field.
-Compatibility-policy header objects, including raw 8-bit legacy `Received:`
+Email-policy `compat32` header objects, including raw 8-bit `Received:`
 and recipient fields, are converted to text before metadata parsing. Each
 derived header field has an independent exception boundary. Broken RFC 2047
 subjects retain their unfolded source text, and metadata defects are catalogued.
 Sender resolution prefers a valid `From:` address, falls back to the RFC
-`From:` inside a quoted legacy nested-MBOX record and then the RFC `Sender:`
+`From:` inside a quoted nested-MBOX record and then the RFC `Sender:`
 header. It recognizes Google Chat event payloads only when their Gmail thread
 header and event fields are present. Chat actors are stored as
 `Full Name (Google Chat)` so they cannot be mistaken for email addresses.
 Reports render the remaining empty sender identity as `(missing sender)`.
-`refresh-senders --owner-names-file FILE` applies this policy transactionally
-to blank historical catalog rows through hash-verified canonical locations.
 Parsed dates outside 1900 through the next calendar year are rejected before
 the normal Received/previous-message/path fallbacks.
 
@@ -157,6 +151,10 @@ the header rows are painted, JavaScript queues one page of preview IDs through
 the Python bridge. A single-worker executor reads the indexed 18-word previews,
 and JavaScript polls the typed result batch until it can fill the rows. Global macOS Command-key handlers
 select numeric MIME part IDs or raw source.
+The toolbar's **Search attachments** checkbox passes an explicit boolean to the
+typed search service. Ordinary terms search `message_fts` by default; when the
+box is selected they search the union of `message_fts` and `attachment_fts`.
+Metadata selectors are unchanged.
 
 MIME descriptions and API responses are Pydantic models.  Body content is
 loaded only for the selected part.  HTML parsing removes active elements,
@@ -167,11 +165,15 @@ explicitly enables them for that view. Individual image and PDF attachments
 are base64-transferred only on an explicit preview action; other attachment
 payloads are written to a private temporary directory before macOS opens them.
 
-`search.sqlite3` contains `message_metadata`, keyed by message SHA-256 with an
+`search.sqlite3` contains separate `message_fts` and `attachment_fts` virtual
+tables so message text remains searchable without attachment matches.
+`message_metadata`, keyed by message SHA-256, contains an
 attachment count and deterministic 18-word body preview, and
 `message_attachments`, keyed by SHA-256 and attachment
 ordinal with the MIME-walk part ID, decoded filename, and normalized MIME type.
-Indexing parses each message once for FTS body text and attachment metadata.
+Indexing parses each message once for FTS body text and attachment metadata;
+`--index-attachments` additionally writes decoded text attachments to
+`attachment_fts`.
 The tables are derived and are replaced together with FTS by `refresh-index`.
 
 `.eml` export writes the bytes returned by hash-verified direct retrieval.
@@ -198,6 +200,24 @@ Use `uv` for dependencies and every test/run target through the repository
 Makefile.  Typed Pydantic structures carry all message metadata and external
 API responses; dictionaries are confined to API-boundary decoding.
 
+`standalone_verify.py` is itself limited to the Python standard library. At
+ingest startup it copies its own source atomically to
+`verify_mail_archive.py` in the archive. The installed script accepts only the
+hybrid format in [INTEGRITY_CONTROLS.md](INTEGRITY_CONTROLS.md). It streams and
+validates the JSON declarations, complete-MBOX `h1` hashes, recovered-message
+`h2` hashes, and semantic-message `h3` hashes, returning nonzero on missing,
+orphaned, malformed, unsupported, or mismatched files. It neither imports the
+package nor reads SQLite.
+
+`write_integrity_files()` streams catalog locations in MBOX byte order and
+uses each catalogued raw SHA-256 to resolve mboxrd `>From ` ambiguity. It then
+atomically writes deterministic JSON control records followed by the TSV table.
+The initial declarations are `h1` (complete MBOX, SHA-256), `h2` (recovered
+RFC 5322 bytes, SHA-256), and `h3` (semantic-message version 1, SHA-256).
+Semantic version 1 applies DKIM relaxed header and simple body canonicalization
+to the selected stable/delivery headers documented in `INTEGRITY_CONTROLS.md`;
+it includes `Delivered-To` and excludes mutable `Status` and `X-Status` fields.
+
 ## Database design
 
 `archive.sqlite3` uses WAL mode during ingest, foreign keys, explicit
@@ -205,21 +225,18 @@ transactions, and a schema version table.  Principal relations are:
 
 ```text
 email_addresses(address_pk, address UNIQUE)
-messages(message_pk, message_id_raw, message_id_normalized, sha256 UNIQUE,
-         date_utc, date_source, category, sender_address_pk, subject, byte_length,
-         clamav_status, clamav_detail, created_run)
+messages(message_pk, message_id_normalized, sha256, sender_address_pk, subject,
+         date_utc, date_source, category,
+         UNIQUE(message_id_normalized, sha256))
 recipients(message_pk, address_pk)
-mbox_generations(generation_pk, filename, sha256, message_count, byte_count,
-                 created_run, valid)
+mbox_generations(generation_pk, filename, sha256, message_count, byte_count)
 locations(message_pk, generation_pk, byte_offset, byte_length)
-sources(source_pk, kind, locator, account, folder, remote_uid)
 source_files(source_path, modified_at_ns, byte_length, sha256, checked_at,
              completed_run)
-observations(observation_pk, source_pk, source_offset, source_sha256,
+observations(observation_pk, source_path, source_offset, source_sha256,
              message_pk, disposition, run_pk, detail)
 metadata_defects(message_pk, field, detail)
-ingest_runs(run_pk, started_at, completed_at, command, version, result)
-manifests(generation_pk, pathname, sha256, created_at)
+ingest_runs(run_pk, started_at, completed_at, result, detail)
 ```
 
 `message_pk` is nullable in `observations` so malformed and autosave-excluded
@@ -231,11 +248,12 @@ preserved.  Add indexes for date/category and
 location lookup.
 
 `search.sqlite3` has its own schema and does not use cross-database foreign
-keys.  Its FTS5 table includes an unindexed `sha256` column plus searchable
+keys. Its main FTS5 table includes an unindexed `sha256` column plus searchable
 headers and selected body text: `text/plain` first, otherwise rendered
-`text/html`, otherwise a safe single-part fallback.  Attachment bytes are
-excluded by default.  `--index-attachments` currently includes text
-attachments only.  The Makefile's `install-mac` and `install-linux` targets
+`text/html`, otherwise a safe single-part fallback. A second FTS5 table stores
+text-attachment content only when requested, allowing the GUI to include it
+without changing default body-search semantics. Binary attachment bytes are
+excluded. The Makefile's `install-mac` and `install-linux` targets
 download Apache Tika's checksum-verified application JAR to the ignored
 project-local `.tools/tika/<version>/` directory; Tika remains an optional
 future extractor for PDF and Office attachments, not a service.  Rebuild the
@@ -243,7 +261,7 @@ index in a temporary database,
 validate row identities against `archive.sqlite3`, then atomically replace the
 old search database. Live indexing and `refresh-index` both exclude
 `INFECTED` and the reserved `MALFORMED` quarantine category; rebuild recognizes
-numbered and legacy unnumbered quarantine MBOX filenames.
+numbered quarantine MBOX filenames.
 Ordinary `mailsearch` listings and reports select only `Sent` and `Archive`;
 the authoritative catalog still retains every quarantine record.
 Normal ingest publishes canonical MBOX/catalog state first, then attempts the
@@ -283,7 +301,7 @@ For every candidate source record:
 8. Keep message, recipient, defect, observation, and location rows in one
    catalog transaction until the append succeeds. Commit the authoritative
    catalog and clear the journal. An exception or the next ingest startup
-   truncates an uncatalogued append and refreshes manifests; a catalogued append
+   truncates an uncatalogued append and refreshes integrity files; a catalogued append
    is validated and retained. Index disposable search content afterward only
    for normal Sent and Archive mail.
 
@@ -311,7 +329,7 @@ the authoritative raw-message SHA-256; unresolved high-ambiguity input fails
 closed.
 
 At run completion, sort each touched normal mailbox by `(resolved_date_utc,
-sha256)`.  The sorter writes a new MBOX and manifest beside the original,
+sha256)`.  The sorter writes a new MBOX and integrity file beside the original,
 scans both end-to-end, compares the unordered identity sets, then atomically
 updates the relevant `mbox_generations`/`locations` rows.  It retains the old
 file until validation succeeds and deletes it only then.  `INFECTED` and
@@ -381,7 +399,7 @@ before any canonical archive is published.
 1. Create the package, configuration model, versioned fresh schema, MBOX/EMLX
    readers/writer, and `verify` command.
 2. Implement recursive local ingest, exact dedupe, autosave exclusion,
-   manifests, sorting, recovery, and ClamAV routing.
+   integrity files, sorting, recovery, and ClamAV routing.
 3. Add `review`, `refresh-index`, FTS5 rebuilding, and conservative body/HTML extraction.
 4. Add IMAP and Gmail importers with resumable checkpoints.
 5. Build the local search/view interface on the stable database and MBOX

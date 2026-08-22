@@ -18,7 +18,7 @@ search:
 	uv run mailsearch $(ARGS)
 
 summary-smoke:
-	@printf '%s\n' 'During verification, the archiver reads every canonical MBOX file without changing it. It checks each message against its recorded SHA-256 identity and validates the manifest and database location. If derived SQLite search data is missing or damaged, that data can be regenerated from the canonical MBOX files. A verification failure is reported for investigation rather than repaired automatically, preserving the original evidence.' | uv run summarize
+	@printf '%s\n' 'During verification, the archiver reads every canonical MBOX file without changing it. It checks each declared complete-MBOX, raw-message, and semantic-message digest in the integrity file. If derived SQLite search data is missing or damaged, that data can be regenerated from the canonical MBOX files. A verification failure is reported for investigation rather than repaired automatically, preserving the original evidence.' | uv run summarize
 
 gui:
 	uv run mailsearch-gui $(ARGS)

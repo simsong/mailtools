@@ -11,7 +11,33 @@ from pathlib import Path
 
 from mailarchiver.catalog import address_pk, create_catalog, create_search
 from mailarchiver.mailsearch import MessageHeader, format_header, render_message
+from mailarchiver.mbox import add_message
 from mailarchiver.search import index_message
+
+
+def add_catalogued_message(archive: Path, message_pk: int, raw: bytes) -> None:
+    path = archive / "2024-Archive1.mbox"
+    box = mailbox.mbox(path, create=True)
+    try:
+        location = add_message(box, path, raw)
+    finally:
+        box.close()
+    catalog = create_catalog(archive / "archive.sqlite3")
+    try:
+        generation = catalog.execute(
+            "INSERT INTO mbox_generations(filename, sha256, message_count, byte_count) "
+            "VALUES (?, '', 0, 0) ON CONFLICT(filename) DO UPDATE SET filename = excluded.filename "
+            "RETURNING generation_pk",
+            (path.name,),
+        ).fetchone()
+        assert generation is not None
+        catalog.execute(
+            "INSERT INTO locations(message_pk, generation_pk, byte_offset, byte_length) VALUES (?, ?, ?, ?)",
+            (message_pk, generation[0], location.byte_offset, location.byte_length),
+        )
+        catalog.commit()
+    finally:
+        catalog.close()
 
 
 def make_archive(tmp_path: Path) -> tuple[Path, bytes]:
@@ -30,23 +56,15 @@ def make_archive(tmp_path: Path) -> tuple[Path, bytes]:
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             ("one@example", hashlib.sha256(raw).hexdigest(), sender, "planning meeting", "2024-01-03T10:00:00+00:00", "date", "Archive"),
         )
-        catalog.execute("INSERT INTO recipients(message_pk, address_pk) VALUES (?, ?)", (cursor.lastrowid, recipient))
+        message_pk = int(cursor.lastrowid)
+        catalog.execute("INSERT INTO recipients(message_pk, address_pk) VALUES (?, ?)", (message_pk, recipient))
         catalog.commit()
         index_message(search, raw, False)
         search.commit()
     finally:
         catalog.close()
         search.close()
-    box = mailbox.mbox(archive / "2024-Archive1.mbox")
-    try:
-        box.add(raw)
-        box.flush()
-    finally:
-        box.close()
-    refreshed = subprocess.run(
-        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"], capture_output=True, text=True, check=False
-    )
-    assert refreshed.returncode == 0, refreshed.stderr
+    add_catalogued_message(archive, message_pk, raw)
     return archive, raw
 
 
@@ -110,28 +128,17 @@ def test_numbered_empty_message_restores_zero_source_bytes(tmp_path: Path) -> No
     search = create_search(archive / "search.sqlite3")
     try:
         blank = address_pk(catalog, "")
-        catalog.execute(
+        cursor = catalog.execute(
             "INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) "
             "VALUES (?, ?, ?, '', '2024-01-01T00:00:00+00:00', 'path-year', 'Archive')",
             (hashlib.sha256(b"").hexdigest(), hashlib.sha256(b"").hexdigest(), blank),
         )
+        message_pk = int(cursor.lastrowid)
         catalog.commit()
     finally:
         catalog.close()
         search.close()
-    box = mailbox.mbox(archive / "2024-Archive1.mbox")
-    try:
-        box.add(b"")
-        box.flush()
-    finally:
-        box.close()
-    refreshed = subprocess.run(
-        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert refreshed.returncode == 0, refreshed.stderr
+    add_catalogued_message(archive, message_pk, b"")
 
     displayed = subprocess.run(
         [sys.executable, "-m", "mailarchiver.mailsearch", "--archive", str(archive), "--mime", "1"],
@@ -150,27 +157,16 @@ def test_numbered_message_preserves_literal_quoted_from_line(tmp_path: Path) -> 
     catalog = create_catalog(archive / "archive.sqlite3")
     try:
         blank = address_pk(catalog, "")
-        catalog.execute(
+        cursor = catalog.execute(
             "INSERT INTO messages(message_id_normalized, sha256, sender_address_pk, subject, date_utc, date_source, category) "
             "VALUES ('quoted@example', ?, ?, '', '2024-01-01T00:00:00+00:00', 'date', 'Archive')",
             (hashlib.sha256(raw).hexdigest(), blank),
         )
+        message_pk = int(cursor.lastrowid)
         catalog.commit()
     finally:
         catalog.close()
-    box = mailbox.mbox(archive / "2024-Archive1.mbox")
-    try:
-        box.add(raw)
-        box.flush()
-    finally:
-        box.close()
-    refreshed = subprocess.run(
-        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert refreshed.returncode == 0, refreshed.stderr
+    add_catalogued_message(archive, message_pk, raw)
 
     displayed = subprocess.run(
         [sys.executable, "-m", "mailarchiver.mailsearch", "--archive", str(archive), "--mime", "2"],
@@ -207,29 +203,6 @@ def test_mailsearch_mime_outputs_original_source(tmp_path: Path) -> None:
     assert displayed.stdout == raw
 
 
-def test_refresh_locations_rebuilds_direct_numbered_lookup(tmp_path: Path) -> None:
-    """Requirement: a rebuilt location maps a message number directly to preserved RFC 5322 bytes."""
-    archive, raw = make_archive(tmp_path)
-    catalog = create_catalog(archive / "archive.sqlite3")
-    try:
-        catalog.execute("DELETE FROM locations")
-        catalog.commit()
-    finally:
-        catalog.close()
-    missing = run_search("--archive", str(archive), "1")
-    assert missing.returncode != 0
-    assert "run mailarchiver refresh-locations" in missing.stderr
-    assert "Traceback" not in missing.stderr
-    refreshed = subprocess.run(
-        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-locations"], capture_output=True, check=False
-    )
-    assert refreshed.returncode == 0, refreshed.stderr
-    displayed = subprocess.run(
-        [sys.executable, "-m", "mailarchiver.mailsearch", "--archive", str(archive), "1"], capture_output=True, check=False
-    )
-    assert displayed.stdout == render_message(raw, False, False).encode()
-
-
 def test_mailsearch_help_describes_syntax() -> None:
     """Requirement: help is sufficient to discover the search language and default limit."""
     result = run_search("--help")
@@ -246,86 +219,6 @@ def test_mailsearch_date_bounds_are_strict_calendar_days(tmp_path: Path) -> None
     assert run_search("--archive", str(archive), "before:2024-01-03").stdout == ""
     assert run_search("--archive", str(archive), "after:2024-01-03").stdout == ""
     assert run_search("--archive", str(archive), "after:2024-01-02").stdout.startswith("1 to:")
-
-
-def test_mailsearch_decodes_legacy_catalog_subjects(tmp_path: Path) -> None:
-    """Requirement: search output decodes historical RFC 2047 catalog subjects without rewriting the archive."""
-    archive, _ = make_archive(tmp_path)
-    catalog = create_catalog(archive / "archive.sqlite3")
-    try:
-        catalog.execute("UPDATE messages SET subject = ?", ("=?utf-8?B?UmU6IFJvYXN0ZWQgQ2F1bGlmbG93ZXI=?=",))
-        catalog.commit()
-    finally:
-        catalog.close()
-    assert "subject:Re: Roasted Cauliflower" in run_search("--archive", str(archive)).stdout
-
-
-def test_refresh_subjects_rewrites_legacy_catalog_values(tmp_path: Path) -> None:
-    """Requirement: refresh-subjects replaces historical encoded catalog text from canonical MBOX mail."""
-    archive, _ = make_archive(tmp_path)
-    catalog = create_catalog(archive / "archive.sqlite3")
-    try:
-        catalog.execute("UPDATE messages SET subject = ?", ("=?utf-8?B?UmU6IFJvYXN0ZWQgQ2F1bGlmbG93ZXI=?=",))
-        catalog.commit()
-    finally:
-        catalog.close()
-
-
-def test_refresh_senders_repairs_blank_catalog_identity(tmp_path: Path) -> None:
-    """Requirement: sender repair reads verified canonical bytes and updates derived metadata only."""
-    archive, _ = make_archive(tmp_path)
-    catalog = create_catalog(archive / "archive.sqlite3")
-    try:
-        blank = address_pk(catalog, "")
-        catalog.execute("UPDATE messages SET sender_address_pk = ?", (blank,))
-        catalog.execute(
-            "INSERT INTO metadata_defects(message_pk, field, detail) VALUES "
-            "(1, 'From', 'missing or invalid sender address')"
-        )
-        catalog.commit()
-    finally:
-        catalog.close()
-    owners = tmp_path / "owners.txt"
-    owners.write_text("sender@example.net\n")
-
-    refreshed = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "mailarchiver",
-            "--archive",
-            str(archive),
-            "refresh-senders",
-            "--owner-names-file",
-            str(owners),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert refreshed.returncode == 0, refreshed.stderr
-    assert ["from", "1"] in [line.split() for line in refreshed.stdout.splitlines()]
-    catalog = create_catalog(archive / "archive.sqlite3")
-    try:
-        assert catalog.execute(
-            "SELECT address, category FROM messages JOIN email_addresses "
-            "ON email_addresses.address_pk = messages.sender_address_pk"
-        ).fetchone() == ("sender@example.net", "Sent")
-        assert catalog.execute(
-            "SELECT COUNT(*) FROM metadata_defects WHERE detail = 'missing or invalid sender address'"
-        ).fetchone() == (0,)
-    finally:
-        catalog.close()
-    refreshed = subprocess.run(
-        [sys.executable, "-m", "mailarchiver", "--archive", str(archive), "refresh-subjects"], capture_output=True, text=True, check=False
-    )
-    assert refreshed.returncode == 0, refreshed.stderr
-    catalog = create_catalog(archive / "archive.sqlite3")
-    try:
-        assert catalog.execute("SELECT subject FROM messages").fetchone() == ("planning meeting",)
-    finally:
-        catalog.close()
 
 
 def test_mailsearch_formats_dynamic_numbers_and_terminal_subjects() -> None:

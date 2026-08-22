@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from .message import decoded_header
 
 SEARCH_CATEGORIES = ("Archive", "Sent")
-QUARANTINE_MAILBOX = re.compile(r"^(?:INFECTED|MALFORMED)\d*\.mbox$")
+QUARANTINE_MAILBOX = re.compile(r"^(?:INFECTED|MALFORMED)\d+\.mbox$")
 PREVIEW_WORDS = 18
 
 
@@ -72,6 +72,14 @@ def parsed_message_text(message: Message, index_attachments: bool, body: str | N
     return "\n".join((headers, body))
 
 
+def attachment_text(message: Message) -> str:
+    """Return decoded text from MIME attachments, excluding binary payloads."""
+    parts = list(message.walk()) if message.is_multipart() else [message]
+    return "\n".join(
+        decoded_part(part) for part in parts if is_attachment(part) and part.get_content_maintype() == "text"
+    )
+
+
 def body_preview(body: str, word_limit: int = PREVIEW_WORDS) -> str:
     """Collapse the first bounded body words into a single display line."""
     words = re.findall(r"\S+", body)
@@ -110,7 +118,11 @@ def index_message(search: sqlite3.Connection, raw: bytes, index_attachments: boo
     message = BytesParser(policy=policy.compat32).parsebytes(raw)
     attachments = indexed_attachments(message)
     body = preferred_body_text(message)
-    search.execute("INSERT INTO message_fts(sha256, content) VALUES (?, ?)", (digest, parsed_message_text(message, index_attachments, body)))
+    search.execute("DELETE FROM message_fts WHERE sha256 = ?", (digest,))
+    search.execute("DELETE FROM attachment_fts WHERE sha256 = ?", (digest,))
+    search.execute("INSERT INTO message_fts(sha256, content) VALUES (?, ?)", (digest, parsed_message_text(message, False, body)))
+    if index_attachments and (attachments_text := attachment_text(message)):
+        search.execute("INSERT INTO attachment_fts(sha256, content) VALUES (?, ?)", (digest, attachments_text))
     search.execute(
         "INSERT INTO message_metadata(sha256, attachment_count, preview) VALUES (?, ?, ?) "
         "ON CONFLICT(sha256) DO UPDATE SET attachment_count = excluded.attachment_count, preview = excluded.preview",
