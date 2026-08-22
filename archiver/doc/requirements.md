@@ -178,6 +178,14 @@ preservation object.
 It excludes `INFECTED` and `MALFORMED` quarantine categories even when
 attachment indexing is requested. `refresh-index` applies the same exclusion
 when rebuilding from canonical MBOX files.
+For every indexed message, the disposable database records an attachment count
+and one ordered metadata row per MIME attachment containing its MIME-walk part
+ID, decoded filename, and normalized MIME type. This metadata is derived during
+the same MIME parse as body indexing and is rebuilt by `refresh-index`; it does
+not make attachment payload bytes canonical database content.
+The message metadata also stores a deterministic, whitespace-collapsed preview
+of the first 18 words of the preferred non-attachment body. An ellipsis marks a
+truncated body.
 Index extraction and insertion happen after canonical MBOX/catalog publication.
 An indexing failure is recorded as a metadata defect and does not reject mail;
 `refresh-index` repairs missing disposable content.
@@ -210,6 +218,46 @@ no plain-text part exists, it renders non-attachment `text/html` parts to
 plain text with Beautiful Soup. `--headers` includes every header; `--html`
 prints decoded HTML parts; `--mime` prints the original RFC 5322/MIME source,
 including all MIME parts and attachment encodings.
+
+`mailsearch-gui` is a macOS-first, read-only pywebview consumer of the same
+search and verified-message retrieval functions.  A single search field uses
+the CLI selectors and ordinary ANDed terms; shell-style quotes group spaces,
+so `subject:"annual report"` is one selector while `subject:annual report`
+retains the CLI meaning of a subject selector plus a free-text term.  It loads
+the newest 100 results at a time without changing the CLI's ten-result default.
+Selecting a result shows it beside the list; double-clicking opens an
+independent message window. The result list can sort by date, subject, or
+sender in either direction. When it has keyboard focus, Up Arrow and Down
+Arrow move the selection and display the newly selected message. Result rows
+show the indexed attachment count with a paperclip.
+The GUI paints each result page from header metadata first, then requests its
+indexed body previews on a background worker and fills a reserved third line
+without blocking the initial result display.
+
+The GUI lists every non-attachment `text/plain` and `text/html` MIME part and
+allows the user to select among them.  HTML is isolated and sanitized. Scripts,
+forms, plugins, file URLs, and remote resources are blocked by default; remote
+HTTP(S) images may load only after an explicit per-message action. Embedded
+CID images may render from the verified message. Attachments appear in a list,
+safe images and PDFs can be previewed inline, and opening any attachment is an
+explicit action with an additional warning for executable or container types.
+Command-1 through Command-9 select the MIME part having that numeric part ID;
+Command-0 and Command-Shift-U select the raw RFC 5322 source.
+
+Saving or dragging a message creates a disposable `.eml` copy containing the
+exact SHA-256-verified RFC 5322 bytes; it never creates or changes canonical
+archive content. Message headers remain selectable text. Dragging is confined
+to a separate message-file icon well and is initially a macOS Finder
+integration. Printing
+prints the displayed headers and selected MIME part through the system print
+panel. Temporary message and attachment exports are removed when the GUI exits.
+
+`summarize` is an optional macOS command that reads nonempty UTF-8 text from
+standard input and prints only a one-sentence Apple Intelligence summary of at
+most 30 words to standard
+output. It uses Apple's on-device Foundation Models framework, never writes the
+input to the archive, and reports a clear error when the device is ineligible,
+Apple Intelligence is disabled, or the model is not ready.
 
 All archive commands use `MAIL_ARCHIVE_DIR` as their default archive directory.
 `--archive DIRECTORY` overrides that environment variable. If neither is set,

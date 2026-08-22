@@ -6,12 +6,15 @@ requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.15.0",
     "pydantic>=2.13.4",
+    "pywebview>=6.2",
     "tabulate>=0.9.0",
 ]
 
 [project.scripts]
 mailarchiver = "mailarchiver.__main__:main"
 mailsearch = "mailarchiver.mailsearch:main"
+mailsearch-gui = "mailarchiver.gui_app:main"
+summarize = "mailarchiver.aisummarize:main"
 
 [build-system]
 requires = ["setuptools>=69"]
@@ -19,6 +22,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+mailarchiver = ["*.swift"]
 
 [dependency-groups]
 dev = ["pylint>=3.3", "pytest>=8.0"]

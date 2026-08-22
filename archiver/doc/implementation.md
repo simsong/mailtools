@@ -41,6 +41,7 @@ archiver/
       gmail.py           OAuth Gmail API incremental fetcher
     normalize.py        dedupe, routing, staging, publishing, sorting
     verify.py            end-to-end integrity checks
+  gui/                  pywebview HTML, CSS, and JavaScript assets
   tests/
 ```
 
@@ -98,8 +99,8 @@ bounded queue of at most `2N` concurrent ClamAV scans.  A single writer emits
 MBOX records and SQLite rows in source order after scan completion.
 
 Rollover, date sorting/repacking, complete recipient metadata, `verify`, richer
-text extraction, IMAP, Gmail, and a graphical local search UI remain planned
-work.  The delivered `mailsearch` command reads both databases without writing:
+text extraction, IMAP, and Gmail remain planned work.  The delivered
+`mailsearch` command reads both databases without writing:
 it applies `to:`/`from:`/`subject:` catalog filters, UTC calendar-day
 `date:`/`before:`/`after:` filters, and ANDed FTS5 terms; it prints stable
 `message_pk` header lines and reads a numbered message directly from its
@@ -139,6 +140,59 @@ available. XML-looking XHTML declared as `text/html` uses the forgiving HTML
 parser while locally suppressing only Beautiful Soup's XML-as-HTML warning.
 `--headers`, `--html`, and `--mime` select full headers, decoded
 HTML parts, and exact original MIME source respectively.
+
+The `gui/` prototype uses pywebview's Cocoa/WKWebView backend on macOS.  Its
+Python API delegates query parsing, SQLite reads, and direct MBOX retrieval to
+the same typed functions used by `mailsearch`.  Search pages request 101 rows
+to return 100 plus a `has_more` indicator.  The UI is conventional: a search
+toolbar above a result list and message pane. Independent message windows load
+the same static application with a message-number parameter.
+
+Result ordering is a server-side SQL whitelist over date, case-folded subject,
+or case-folded sender with a stable message-number tie break. The listbox owns
+keyboard focus after a pointer selection and implements Up/Down selection.
+Result paperclips use attachment counts joined from the disposable search
+metadata without rereading MBOX content. Each row reserves a third line; after
+the header rows are painted, JavaScript queues one page of preview IDs through
+the Python bridge. A single-worker executor reads the indexed 18-word previews,
+and JavaScript polls the typed result batch until it can fill the rows. Global macOS Command-key handlers
+select numeric MIME part IDs or raw source.
+
+MIME descriptions and API responses are Pydantic models.  Body content is
+loaded only for the selected part.  HTML parsing removes active elements,
+event handlers, file URLs, and unsafe URL schemes, replaces image CID references
+with message-local data, and injects a restrictive CSP.  The HTML is displayed
+inside a sandboxed iframe. Remote image URLs are omitted unless the user
+explicitly enables them for that view. Individual image and PDF attachments
+are base64-transferred only on an explicit preview action; other attachment
+payloads are written to a private temporary directory before macOS opens them.
+
+`search.sqlite3` contains `message_metadata`, keyed by message SHA-256 with an
+attachment count and deterministic 18-word body preview, and
+`message_attachments`, keyed by SHA-256 and attachment
+ordinal with the MIME-walk part ID, decoded filename, and normalized MIME type.
+Indexing parses each message once for FTS body text and attachment metadata.
+The tables are derived and are replaced together with FTS by `refresh-index`.
+
+`.eml` export writes the bytes returned by hash-verified direct retrieval.
+Finder dragging uses a temporary `.eml` file URL and the Cocoa webview's native
+file/link drag support. Only the message-file icon well is draggable; the
+header region remains normal selectable text. `window.print()` is handled by pywebview's WKWebView
+print operation. Temporary exports live only for the application process.
+
+The shell page permits `unsafe-eval` only for local scripts because pywebview
+constructs its typed Python API wrappers with JavaScript `Function`. Message
+HTML remains isolated in a sandboxed frame with its own restrictive CSP. The
+`gui-smoke` Makefile target verifies that Cocoa injects the bridge and that
+JavaScript can call the Python `status()` API.
+
+`aisummarize.py` implements the `summarize` console entry point. It reads stdin
+before doing any native work and invokes a content-addressed Swift helper built
+into `~/Library/Caches/mailarchiver` from the packaged `apple_summary.swift`
+source. The helper uses `SystemLanguageModel.default`, checks model
+availability, and asks for one faithful abstractive sentence of at most 30 words while
+treating input text as untrusted content rather than instructions. Neither the
+input nor output is canonical archive data.
 
 Use `uv` for dependencies and every test/run target through the repository
 Makefile.  Typed Pydantic structures carry all message metadata and external

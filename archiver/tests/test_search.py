@@ -2,10 +2,12 @@
 
 import sqlite3
 import warnings
+from pathlib import Path
 
 from bs4 import XMLParsedAsHTMLWarning
 
-from mailarchiver.search import index_message_safely, message_text
+from mailarchiver.catalog import create_search
+from mailarchiver.search import body_preview, index_message, index_message_safely, message_text
 
 
 def test_plain_body_wins_and_attachment_requires_opt_in() -> None:
@@ -53,6 +55,55 @@ def test_xml_looking_html_is_rendered_without_parser_warning() -> None:
 
     assert "message body" in rendered
     assert not any(item.category is XMLParsedAsHTMLWarning for item in caught)
+
+
+def test_index_records_attachment_count_names_and_mime_types(tmp_path: Path) -> None:
+    """Requirement: the disposable index stores ordered attachment metadata."""
+    raw = b"\n".join(
+        [
+            b"Content-Type: multipart/mixed; boundary=x",
+            b"",
+            b"--x",
+            b"Content-Type: text/plain",
+            b"",
+            b"body",
+            b"--x",
+            b"Content-Type: application/pdf",
+            b'Content-Disposition: attachment; filename="annual report.pdf"',
+            b"",
+            b"pdf",
+            b"--x",
+            b"Content-Type: text/calendar; name=invite.ics",
+            b"Content-Disposition: attachment",
+            b"",
+            b"calendar",
+            b"--x--",
+        ]
+    )
+    search = create_search(tmp_path / "search.sqlite3")
+    try:
+        index_message(search, raw, False)
+        metadata = search.execute("SELECT attachment_count, preview FROM message_metadata").fetchone()
+        attachments = search.execute(
+            "SELECT attachment_ordinal, part_id, filename, mime_type FROM message_attachments ORDER BY attachment_ordinal"
+        ).fetchall()
+    finally:
+        search.close()
+
+    assert metadata == (2, "body")
+    assert attachments == [
+        (1, 2, "annual report.pdf", "application/pdf"),
+        (2, 3, "invite.ics", "text/calendar"),
+    ]
+
+
+def test_body_preview_collapses_and_bounds_words() -> None:
+    """Requirement: indexed result previews contain the first 18 body words on one line."""
+    body = "one two\nthree four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen"
+
+    assert body_preview(body) == (
+        "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen…"
+    )
 
 
 def test_index_failure_is_recorded_without_raising() -> None:

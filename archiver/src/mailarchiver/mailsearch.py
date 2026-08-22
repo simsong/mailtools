@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import shlex
 import shutil
 import sqlite3
 import sys
@@ -12,6 +13,7 @@ from datetime import date as CalendarDate, timedelta
 from email import policy
 from email.message import Message
 from email.parser import BytesParser
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -44,6 +46,18 @@ class MessageHeader(BaseModel):
     sender: str
     subject: str
     date_utc: str
+    attachment_count: int = 0
+
+
+class SortField(StrEnum):
+    DATE = "date"
+    SUBJECT = "subject"
+    SENDER = "sender"
+
+
+class SortDirection(StrEnum):
+    ASCENDING = "ascending"
+    DESCENDING = "descending"
 
 
 def parse_terms(tokens: list[str]) -> SearchTerms:
@@ -74,7 +88,24 @@ def contains(value: str) -> str:
     return "%" + value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
-def search_headers(archive: Path, terms: SearchTerms, limit: int) -> list[MessageHeader]:
+def parse_query(query: str) -> SearchTerms:
+    """Parse one GUI-style search field with shell-compatible quoting."""
+    try:
+        return parse_terms(shlex.split(query))
+    except ValueError as error:
+        if "No closing quotation" in str(error):
+            raise ValueError("search has an unclosed quote") from error
+        raise
+
+
+def search_headers(
+    archive: Path,
+    terms: SearchTerms,
+    limit: int,
+    offset: int = 0,
+    sort_by: SortField = SortField.DATE,
+    direction: SortDirection = SortDirection.DESCENDING,
+) -> list[MessageHeader]:
     catalog_path, search_path = archive / "archive.sqlite3", archive / "search.sqlite3"
     if not catalog_path.is_file() or not search_path.is_file():
         raise ValueError(f"{archive} must contain archive.sqlite3 and search.sqlite3")
@@ -107,18 +138,27 @@ def search_headers(archive: Path, terms: SearchTerms, limit: int) -> list[Messag
         if terms.text:
             clauses.append("m.sha256 IN (SELECT sha256 FROM search.message_fts WHERE message_fts MATCH ?)")
             parameters.append(fts_query(terms.text))
+        order_column = {
+            SortField.DATE: "m.date_utc",
+            SortField.SUBJECT: "lower(m.subject)",
+            SortField.SENDER: "lower(sender.address)",
+        }[sort_by]
+        order_direction = "ASC" if direction == SortDirection.ASCENDING else "DESC"
         query = (
-            "SELECT m.message_pk, COALESCE(group_concat(DISTINCT recipient.address), ''), sender.address, m.subject, m.date_utc "
+            "SELECT m.message_pk, COALESCE(group_concat(DISTINCT recipient.address), ''), sender.address, m.subject, m.date_utc, "
+            "COALESCE(metadata.attachment_count, 0) "
             "FROM messages m JOIN email_addresses sender ON sender.address_pk = m.sender_address_pk "
+            "LEFT JOIN search.message_metadata metadata ON metadata.sha256 = m.sha256 "
             "LEFT JOIN recipients r ON r.message_pk = m.message_pk "
             "LEFT JOIN email_addresses recipient ON recipient.address_pk = r.address_pk "
             + ("WHERE " + " AND ".join(clauses) + " " if clauses else "")
-            + "GROUP BY m.message_pk ORDER BY m.date_utc DESC, m.message_pk DESC "
-            + ("" if limit == 0 else "LIMIT ?")
+            + f"GROUP BY m.message_pk ORDER BY {order_column} {order_direction}, m.message_pk {order_direction} "
+            + ("" if limit == 0 else "LIMIT ? OFFSET ?")
         )
         if limit:
-            parameters.append(limit)
-        return [MessageHeader.model_validate(dict(zip(("message_pk", "recipients", "sender", "subject", "date_utc"), row))) for row in database.execute(query, parameters)]
+            parameters.extend((limit, offset))
+        fields = ("message_pk", "recipients", "sender", "subject", "date_utc", "attachment_count")
+        return [MessageHeader.model_validate(dict(zip(fields, row))) for row in database.execute(query, parameters)]
     finally:
         database.close()
 
@@ -148,7 +188,8 @@ def render_message(raw: bytes, full_headers: bool, html: bool) -> str:
     return headers + ("\n\n" + body.rstrip("\n") if body else "") + "\n"
 
 
-def print_message(archive: Path, message_pk: int, full_headers: bool, html: bool, mime: bool) -> None:
+def read_message_bytes(archive: Path, message_pk: int) -> bytes:
+    """Return one canonical message after direct-location SHA-256 validation."""
     database = sqlite3.connect(f"file:{archive / 'archive.sqlite3'}?mode=ro", uri=True)
     try:
         row = database.execute(
@@ -172,6 +213,11 @@ def print_message(archive: Path, message_pk: int, full_headers: bool, html: bool
         )
     except ValueError as error:
         raise ValueError(f"MBOX location hash mismatch for message {message_pk}") from error
+    return raw
+
+
+def print_message(archive: Path, message_pk: int, full_headers: bool, html: bool, mime: bool) -> None:
+    raw = read_message_bytes(archive, message_pk)
     if mime:
         sys.stdout.buffer.write(raw)
     else:
