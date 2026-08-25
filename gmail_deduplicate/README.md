@@ -5,8 +5,9 @@ Apple's Mail.app stores autosave messages in the Gmail archive that can become a
 Fortunately, all of these mail messages are identified with the `X-Apple-Auto-Saved` header.
 
 This vendored tool authenticates to Gmail using OAuth2 and then deletes those
-autosave messages.  It is separate from `archiver`, which never changes a
-source mailbox.
+autosave messages. It is separate from
+[`mailarchiver`](https://github.com/simsong/mail-archiver), which never changes
+a source mailbox.
 
 The program uses Gmail's API with batching. However, because of the
 interaction between Mail.app's frequent saves and Gmail rate limits,

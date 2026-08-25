@@ -81,7 +81,6 @@ venv/
 *.ini
 *.eml
 *.mbox
-/archiver/.tools/
 /gmail_deduplicate/client_secrets.json
 /gmail_deduplicate/token_gmail.json
 /gmail_deduplicate/original_contacts.json
