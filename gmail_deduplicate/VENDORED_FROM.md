@@ -9,4 +9,5 @@ files, but excludes its local virtual environment, `.DS_Store`, credentials,
 and OAuth token.
 
 The tool removes Gmail messages bearing `X-Apple-Auto-Saved`; it is not part
-of the read-only mail archiver ingest path.
+of the read-only
+[`mailarchiver`](https://github.com/simsong/mail-archiver) ingest path.

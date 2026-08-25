@@ -1,64 +1,53 @@
 # Mail Tools
-Right now, this git repository is where we are developing code to
-process and analyze mail.
 
-## What's here?
-* [archiver](archiver/) -- Byte-preserving personal MBOX archiver with a
-  rebuildable SQLite search index.
-* [gmail_deduplicate](gmail_deduplicate/) -- OAuth Gmail cleanup utility for
-  Apple Mail's `X-Apple-Auto-Saved` messages.  This tool deletes remote mail;
-  see its safety notes before running it.
-* [misc](misc/) -- Miscellaneous tools, including:
-  * The [autoresponder.py](misc/autoresponder.py).
-  * [imaptool.py(misc/imaptool.py) --- for
+This is an umbrella and historical repository for programs that process or
+analyze email. The actively developed personal preservation application has
+moved to the standalone
+[`simsong/mail-archiver`](https://github.com/simsong/mail-archiver)
+repository, with its own packaging, tests, documentation, and CI.
 
-# Using with GMAIL
-1. Request an App Password https://support.google.com/mail/answer/185833?hl=en
-2. Access GMAIL through imap.gmail.com https://developers.google.com/gmail/imap/imap-smtp
+The remaining programs range from useful specialty tools to research
+prototypes and preserved legacy code. Review each tool before connecting it to
+a live mailbox.
 
-# Functionality we want
-* Basic retrieval tools:
-  - List email addresses
-  - Dates for sender
-  - Dates for sender, and # of emails sent/received per day
+## Specialty tools
 
-* Analytics:
-  - Identify cliques
-  - Draw a map of what times during the day a person sends and reads mail.
-  - Identify where a person is located.
+* [`gmail_deduplicate/`](gmail_deduplicate/) removes Gmail messages carrying
+  Apple Mail's `X-Apple-Auto-Saved` header. It permanently deletes remote mail,
+  has no dry-run mode, and must be treated as a destructive alpha utility.
+* [`imap_copy.py`](imap_copy.py) lists or downloads one IMAP mailbox and can
+  upload an MBOX to `INBOX`. It does not provide durable UID checkpointing or
+  destination verification.
+* [`python/mailtool/imaptool.py`](python/mailtool/imaptool.py) lists folders,
+  reports status, inspects envelopes, and downloads a folder to MBOX. Its
+  client-side cache and incremental synchronization remain incomplete.
+* [`autoresponder.py`](autoresponder.py) and
+  [`search_macmail_archive.py`](search_macmail_archive.py) implement an older
+  mail-driven form workflow. The autoresponder can delete and expunge source
+  messages and is not safe for general deployment without additional controls.
+* [`python/mailtool/pdf_mbox/`](python/mailtool/pdf_mbox/) is an experimental
+  FOIA PDF email-extraction project with legacy dependencies.
+* [`macos_addressbook_extract.py`](macos_addressbook_extract.py) extracts data
+  from an older macOS Address Book database schema.
 
-* parse all iCal entries in mail
-* LDA on email?
-* Top emails every week.
+## Historical material
 
+The `legacy/`, `python/mailtool/albert/`, `python/timewheels/`, `gui_demo/`,
+and `ref/` trees contain older software, teaching and research prototypes, or
+third-party reference material. They are retained for history and should not
+be mistaken for supported applications.
 
-* Report breaks in mail file. (Days on which mail was not received)
-* Heatmap of when mail is sent
-  - weekday / weekend
-  - day of week
+## Gmail access
 
-* Topic modeling of received messages
-  - how many topics?
-  - mapping of users to specific topics
-  - identify users who email on same topics but do not email each other...?
+Gmail IMAP access normally requires an application-specific password:
 
-* Plug-in to Autopsey
+1. Request an app password from
+   <https://support.google.com/mail/answer/185833>.
+2. See Google's IMAP/SMTP documentation at
+   <https://developers.google.com/gmail/imap/imap-smtp>.
 
-# Implementation notes
+## See also
 
-* Metadata is stored in an sqlite3 databsae.
-* The schema we use is the same as used by Apple mail client
-  - Makes mail tool  work with Apple Mail out of the box.
-  - Schema is well developed, stored in [schema.sql](schema.sql)
-* Apple AddressBook groups senders together
-  - On non-apple systems, need a tool to do this.
-
-
-
-# See Also
-* Email Maining Toolkit, Java: https://github.com/hjast/NLPWorkspace
-* See also https://github.com/mihaip/mail-trends.git
-
-* Identify people who always CC you a dn askt them to stop.
-* Identify email sending times. He map through the day, week.
-* tool for assigning a title to a topic model?
+* [mail-archiver](https://github.com/simsong/mail-archiver)
+* [Email Mining Toolkit](https://github.com/hjast/NLPWorkspace)
+* [mail-trends](https://github.com/mihaip/mail-trends)
